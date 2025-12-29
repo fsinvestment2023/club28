@@ -17,14 +17,14 @@ const Dashboard = () => {
   };
 
   const fetchTournaments = async () => {
-    const res = await fetch('http://127.0.0.1:8000/tournaments');
+    const res = await fetch('https://club28-backend.onrender.com/tournaments');
     const data = await res.json();
     setTournaments(data);
   };
 
   const fetchMatches = async () => {
     setLoading(true);
-    const res = await fetch('http://127.0.0.1:8000/scores');
+    const res = await fetch('https://club28-backend.onrender.com/scores');
     const data = await res.json();
     const filtered = selectedTournament 
         ? data.filter(m => m.category === selectedTournament.name)
@@ -42,7 +42,7 @@ const Dashboard = () => {
     const fee = prompt("Entry Fee:", "2500");
     const prize = prompt("Prize Pool:", "50000");
 
-    await fetch('http://127.0.0.1:8000/admin/create-tournament', {
+    await fetch('https://club28-backend.onrender.com/admin/create-tournament', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ name, type, fee, prize })
     });
@@ -53,7 +53,7 @@ const Dashboard = () => {
   const handleEditSubmit = async () => {
       if(!editingTournament) return;
       
-      await fetch('http://127.0.0.1:8000/admin/edit-tournament', {
+      await fetch('https://club28-backend.onrender.com/admin/edit-tournament', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
               id: editingTournament.id,
@@ -76,7 +76,7 @@ const Dashboard = () => {
     const time = document.getElementById('new-time').value;
     const group = document.getElementById('new-grp').value || "A";
 
-    await fetch('http://127.0.0.1:8000/admin/create-match', {
+    await fetch('https://club28-backend.onrender.com/admin/create-match', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ 
             category: selectedTournament.name, 
@@ -87,12 +87,12 @@ const Dashboard = () => {
   };
 
   const handleScoreUpdate = async (id, score) => {
-      await fetch('http://127.0.0.1:8000/admin/update-score', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({match_id: id, score})});
+      await fetch('https://club28-backend.onrender.com/admin/update-score', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({match_id: id, score})});
       fetchMatches();
   };
 
   const handleScheduleUpdate = async (matchId, date, time) => {
-    await fetch('http://127.0.0.1:8000/admin/edit-schedule', {
+    await fetch('https://club28-backend.onrender.com/admin/edit-schedule', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ match_id: matchId, date, time })
     });

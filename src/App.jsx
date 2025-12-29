@@ -80,12 +80,12 @@ const TournamentRegistration = ({ onRegister }) => {
 
     useEffect(() => {
         const loadData = async () => {
-            const tRes = await fetch('http://127.0.0.1:8000/tournaments');
+            const tRes = await fetch('https://club28-backend.onrender.com/tournaments');
             const tData = await tRes.json();
             const found = tData.find(t => t.id.toString() === id);
             setTournament(found);
             if (found) {
-                const sRes = await fetch('http://127.0.0.1:8000/generate-test-season');
+                const sRes = await fetch('https://club28-backend.onrender.com/generate-test-season');
                 const sData = await sRes.json();
                 setPreviewSchedule((sData.full_schedule?.schedule || []).filter(m => m.category === found.name));
             }
@@ -174,7 +174,7 @@ const TournamentRegistration = ({ onRegister }) => {
 const CompetePage = () => {
     const [tournaments, setTournaments] = useState([]);
     const navigate = useNavigate();
-    useEffect(() => { fetch('http://127.0.0.1:8000/tournaments').then(res => res.json()).then(data => setTournaments(data)); }, []);
+    useEffect(() => { fetch('https://club28-backend.onrender.com/tournaments').then(res => res.json()).then(data => setTournaments(data)); }, []);
     return (
         <div className="pb-24 bg-gray-50 min-h-screen font-sans">
             <div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg mb-[-20px]"><h1 className="text-3xl font-black italic uppercase">Events</h1><p className="text-blue-100 text-xs font-bold uppercase tracking-widest">Select a League to Join</p></div>
@@ -204,9 +204,9 @@ const OngoingEvents = ({ category, myTeamID }) => {
     const fetchData = async () => {
         try {
             const [schRes, scoreRes, rankRes] = await Promise.all([
-                fetch('http://127.0.0.1:8000/generate-test-season'),
-                fetch('http://127.0.0.1:8000/scores'),
-                fetch(`http://127.0.0.1:8000/standings/${category}`)
+                fetch('https://club28-backend.onrender.com/generate-test-season'),
+                fetch('https://club28-backend.onrender.com/scores'),
+                fetch(`https://club28-backend.onrender.com/standings/${category}`)
             ]);
             const schData = await schRes.json();
             const scoreData = await scoreRes.json();
@@ -220,8 +220,8 @@ const OngoingEvents = ({ category, myTeamID }) => {
     };
     useEffect(() => { fetchData(); const interval = setInterval(fetchData, 10000); return () => clearInterval(interval); }, [category]);
 
-    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch('http://127.0.0.1:8000/submit-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
-    const handleVerify = async (matchId, action) => { await fetch('http://127.0.0.1:8000/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
+    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch('https://club28-backend.onrender.com/submit-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
+    const handleVerify = async (matchId, action) => { await fetch('https://club28-backend.onrender.com/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
     
     const filteredStandings = standings.filter(t => t.group === activeGroup).sort((a, b) => b.points - a.points);
     const getRankIcon = (index) => { if (index < 2) return <div className="bg-green-100 text-green-600 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">Q</div>; return <span className="font-bold text-gray-400 text-xs w-5 text-center">{index + 1}</span>; };
@@ -263,7 +263,7 @@ const HomePage = ({ user }) => {
   const [availableTournaments, setAvailableTournaments] = useState([]);
   const [viewingTournament, setViewingTournament] = useState(user?.active_category || "Club 28 League");
 
-  useEffect(() => { fetch('http://127.0.0.1:8000/tournaments').then(res => res.json()).then(data => setAvailableTournaments(data)); }, []);
+  useEffect(() => { fetch('https://club28-backend.onrender.com/tournaments').then(res => res.json()).then(data => setAvailableTournaments(data)); }, []);
   const handleQuickAction = (action) => { if (action === 'Compete') navigate('/compete'); else alert("Coming Soon!"); };
 
   return (
@@ -284,7 +284,7 @@ const HomePage = ({ user }) => {
 
 const LoginPage = ({ onLogin }) => {
   const [phone, setPhone] = useState("");
-  const handleLogin = async () => { try { const response = await fetch('http://127.0.0.1:8000/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone, name: "Player" }) }); const data = await response.json(); onLogin(data.user); } catch (e) { alert("Backend Error"); } };
+  const handleLogin = async () => { try { const response = await fetch('https://club28-backend.onrender.com/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone, name: "Player" }) }); const data = await response.json(); onLogin(data.user); } catch (e) { alert("Backend Error"); } };
   return <div className="min-h-screen bg-blue-600 p-8 text-white"><h1 className="text-5xl font-black mt-20">PLAYTOMIC</h1><input className="w-full bg-white/20 p-4 rounded-xl mt-8 text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Phone" onChange={e => setPhone(e.target.value)}/><button onClick={handleLogin} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black mt-4 uppercase">Login</button></div>;
 };
 
