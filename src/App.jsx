@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Trophy, User, Calendar, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Smartphone, Hash, Activity, Medal, ChevronDown, ArrowLeft } from 'lucide-react';
+import { Trophy, User, Calendar, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft } from 'lucide-react';
 import Dashboard from './Dashboard.jsx'; 
+import API_URL from './api'; 
 
-// --- COMPONENTS ---
+// --- SHARED COMPONENTS ---
+
 const BottomNav = () => {
   const location = useLocation();
-  // Hide Bottom Nav on Admin and Registration pages
   if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/register')) return null;
   const isActive = (path) => location.pathname === path;
   return (
@@ -30,65 +31,130 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
                         <div className="bg-gray-50 px-4 py-2 border-y border-gray-100 flex justify-between items-center"><span className="font-black text-xs text-gray-800 uppercase">{new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span><span className="text-[9px] font-bold text-gray-400">{dayMatches.length} Games</span></div>
                         <div className="divide-y divide-gray-50">{Object.entries(byTime).map(([time, timeMatches], idx) => (
                                 <div key={idx} className="flex p-3 hover:bg-blue-50 transition-colors">
-                                    <div className="w-14 pr-2 border-r border-gray-100 flex flex-col justify-center"><span className="text-xs font-black text-gray-900">{time.replace(":00 ", "")}</span><span className="text-[8px] font-bold text-gray-400 uppercase">{time.slice(-2)}</span></div>
+                                    <div className="w-14 pr-2 border-r border-gray-100 flex flex-col justify-center"><span className="text-xs font-black text-gray-900">{time.replace(":00", "")}</span></div>
                                     <div className="flex-1 grid grid-cols-1 gap-2 pl-3">{timeMatches.map((m, mIdx) => (
                                             <div key={mIdx} className="flex items-center justify-between"><div className="text-xs w-full">{m.t1 === "TBD" ? (<div className="flex items-center gap-2"><span className="bg-gray-100 text-gray-500 text-[9px] font-bold px-2 py-0.5 rounded uppercase">{m.stage}</span><span className="text-[9px] text-gray-400 italic">{m.group}</span></div>) : (<div className="flex items-center gap-1"><span className={m.t1 === myTeamID ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t1}</span><span className="text-[9px] text-gray-300 px-1">vs</span><span className={m.t2 === myTeamID ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t2}</span></div>)}</div>{onAction && m.t1 !== "TBD" && onAction(m)}</div>))}</div></div>))}</div></div>);})
             }</div>
     );
 };
 
-// --- REGISTRATION PAGE (UPDATED WITH DYNAMIC PRIZES & 3 PLACES) ---
+// --- AUTH PAGE ---
+const LoginPage = ({ onLogin }) => {
+  const [mode, setMode] = useState("LOGIN"); 
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  
+  const [teamId, setTeamId] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [name, setName] = useState("");
+  const [generatedId, setGeneratedId] = useState(null);
+
+  const safeFetch = async (endpoint, options) => {
+    try {
+        const res = await fetch(`${API_URL}${endpoint}`, options);
+        const data = await res.json();
+        return { ok: res.ok, data };
+    } catch (e) {
+        console.error(e);
+        alert("Cannot connect to server. Ensure backend is running.");
+        return { ok: false, error: true };
+    }
+  };
+
+  const handleSendOtp = async () => {
+      setLoading(true);
+      const { ok, data, error } = await safeFetch('/auth/send-otp', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ phone }) });
+      setLoading(false);
+      if(error) return;
+      if(data.status === "sent") { alert(`DEBUG OTP: ${data.debug_otp}`); setStep(2); } else { alert("Error sending OTP"); }
+  };
+
+  const handleRegister = async () => {
+      setLoading(true);
+      const { ok, data, error } = await safeFetch('/auth/register', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ phone, otp, name, password }) });
+      setLoading(false);
+      if(error) return;
+      if(ok) { setGeneratedId(data.team_id); setStep(3); } else { alert(data.detail || "Error"); }
+  };
+
+  const handleLoginSubmit = async () => {
+      setLoading(true);
+      const { ok, data, error } = await safeFetch('/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: teamId, password }) });
+      setLoading(false);
+      if(error) return;
+      if(ok) { onLogin(data.user); } else { alert(data.detail || "Login Failed"); }
+  };
+
+  const handleReset = async () => {
+      setLoading(true);
+      const { ok, data, error } = await safeFetch('/auth/reset-password', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ phone, otp, new_password: password }) });
+      setLoading(false);
+      if(error) return;
+      if(ok) { alert(`Reset Success! Team ID: ${data.team_id}`); setMode("LOGIN"); setStep(1); } else { alert(data.detail); }
+  };
+
+  return (
+    <div className="min-h-screen bg-blue-600 flex flex-col items-center justify-center p-8 text-white font-sans">
+      <h1 className="text-5xl font-black italic mb-8">PLAYTOMIC</h1>
+      
+      {mode === "LOGIN" && (
+          <div className="w-full max-w-sm space-y-4">
+              <input value={teamId} onChange={e=>setTeamId(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Team ID" />
+              <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Password" />
+              <button onClick={handleLoginSubmit} disabled={loading} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black uppercase shadow-lg hover:bg-blue-50">{loading ? "..." : "Login"}</button>
+              <div className="flex justify-between text-xs font-bold text-blue-200 mt-4"><button onClick={() => {setMode("REGISTER"); setStep(1); setPhone("");}}>New Player? Register</button><button onClick={() => {setMode("FORGOT"); setStep(1); setPhone("");}}>Forgot Password?</button></div>
+          </div>
+      )}
+
+      {mode === "REGISTER" && (
+          <div className="w-full max-w-sm space-y-4 bg-white/10 p-6 rounded-3xl backdrop-blur-sm">
+              <h2 className="text-xl font-bold mb-4">Create Account</h2>
+              {step === 1 && (<><input value={phone} onChange={e=>setPhone(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Phone Number" /><button onClick={handleSendOtp} disabled={loading} className="w-full bg-black text-white p-4 rounded-xl font-black uppercase">{loading?"...":"Send OTP"}</button></>)}
+              {step === 2 && (<><div className="text-xs font-bold text-blue-200">OTP Sent</div><input value={otp} onChange={e=>setOtp(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none text-center text-xl tracking-widest" placeholder="0000" /><input value={name} onChange={e=>setName(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Full Name" /><input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Set Password" /><button onClick={handleRegister} disabled={loading} className="w-full bg-green-400 text-blue-900 p-4 rounded-xl font-black uppercase">Create Account</button></>)}
+              {step === 3 && (<div className="text-center"><div className="w-16 h-16 bg-green-400 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-900 text-2xl">✓</div><h3 className="font-bold">Welcome, {name}!</h3><p className="text-sm opacity-80 mb-6">Your Team ID is:</p><div className="bg-white text-blue-600 text-3xl font-black p-4 rounded-xl mb-6">{generatedId}</div><button onClick={() => {setMode("LOGIN"); setTeamId(generatedId);}} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black uppercase">Login Now</button></div>)}
+              {step !== 3 && <button onClick={() => setMode("LOGIN")} className="w-full text-center text-xs font-bold text-blue-300 mt-4">Cancel</button>}
+          </div>
+      )}
+
+      {mode === "FORGOT" && (
+          <div className="w-full max-w-sm space-y-4 bg-white/10 p-6 rounded-3xl backdrop-blur-sm">
+               <h2 className="text-xl font-bold mb-4 text-red-200">Reset Password</h2>
+               {step === 1 && (<><input value={phone} onChange={e=>setPhone(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Registered Phone" /><button onClick={handleSendOtp} disabled={loading} className="w-full bg-black text-white p-4 rounded-xl font-black uppercase">Send OTP</button></>)}
+               {step === 2 && (<><input value={otp} onChange={e=>setOtp(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none text-center text-xl tracking-widest" placeholder="OTP" /><input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white placeholder:text-blue-200 font-bold outline-none" placeholder="New Password" /><button onClick={handleReset} disabled={loading} className="w-full bg-red-400 text-white p-4 rounded-xl font-black uppercase">Reset Password</button></>)}
+               <button onClick={() => setMode("LOGIN")} className="w-full text-center text-xs font-bold text-blue-300 mt-4">Cancel</button>
+          </div>
+      )}
+    </div>
+  );
+};
+
+// --- MAIN PAGES ---
+
 const TournamentRegistration = ({ onRegister }) => {
     const navigate = useNavigate();
     const { id } = useParams();
     const [tournament, setTournament] = useState(null);
     const [selectedCat, setSelectedCat] = useState('Advance'); 
     const [loading, setLoading] = useState(false);
-    const [previewSchedule, setPreviewSchedule] = useState([]);
 
-    // --- PRIZE STRUCTURE DEF ---
     const prizeStructure = {
-        'Advance': { 
-            fee: '2,500', 
-            places: [
-                { rank: '1st Place', amount: '50,000', icon: '🥇' },
-                { rank: '2nd Place', amount: '25,000', icon: '🥈' },
-                { rank: '3rd Place', amount: '10,000', icon: '🥉' }
-            ] 
-        },
-        'Intermediate +': { 
-            fee: '2,000', 
-            places: [
-                { rank: '1st Place', amount: '30,000', icon: '🥇' },
-                { rank: '2nd Place', amount: '15,000', icon: '🥈' },
-                { rank: '3rd Place', amount: '5,000', icon: '🥉' }
-            ] 
-        },
-        'Intermediate': { 
-            fee: '1,500', 
-            places: [
-                { rank: '1st Place', amount: '15,000', icon: '🥇' },
-                { rank: '2nd Place', amount: '8,000', icon: '🥈' },
-                { rank: '3rd Place', amount: '3,000', icon: '🥉' }
-            ] 
-        }
+        'Advance': { fee: '2,500', places: [{ rank: '1st Place', amount: '50,000', icon: '🥇' }, { rank: '2nd Place', amount: '25,000', icon: '🥈' }, { rank: '3rd Place', amount: '10,000', icon: '🥉' }] },
+        'Intermediate +': { fee: '2,000', places: [{ rank: '1st Place', amount: '30,000', icon: '🥇' }, { rank: '2nd Place', amount: '15,000', icon: '🥈' }, { rank: '3rd Place', amount: '5,000', icon: '🥉' }] },
+        'Intermediate': { fee: '1,500', places: [{ rank: '1st Place', amount: '15,000', icon: '🥇' }, { rank: '2nd Place', amount: '8,000', icon: '🥈' }, { rank: '3rd Place', amount: '3,000', icon: '🥉' }] }
     };
-
-    // Default fallback if category not found (e.g. for custom events)
     const defaultStructure = { fee: '1,000', places: [{ rank: 'Winner', amount: 'Prize Pool', icon: '🏆' }] };
     const activeDetails = prizeStructure[selectedCat] || defaultStructure;
 
     useEffect(() => {
         const loadData = async () => {
-            const tRes = await fetch('https://club28-backend.onrender.com/tournaments');
-            const tData = await tRes.json();
-            const found = tData.find(t => t.id.toString() === id);
-            setTournament(found);
-            if (found) {
-                const sRes = await fetch('https://club28-backend.onrender.com/generate-test-season');
-                const sData = await sRes.json();
-                setPreviewSchedule((sData.full_schedule?.schedule || []).filter(m => m.category === found.name));
-            }
+            try {
+                const tRes = await fetch(`${API_URL}/tournaments`);
+                const tData = await tRes.json();
+                const found = tData.find(t => t.id.toString() === id);
+                setTournament(found);
+            } catch(e) { console.error("Load Error", e); }
         };
         loadData();
     }, [id]);
@@ -97,21 +163,15 @@ const TournamentRegistration = ({ onRegister }) => {
         setLoading(true);
         setTimeout(() => {
             const user = JSON.parse(localStorage.getItem("user"));
-            const feeAmount = parseInt(activeDetails.fee.replace(/,/g, ''));
-            const updatedUser = { 
-                ...user, 
-                active_category: tournament.name, 
-                active_level: selectedCat, 
-                wallet_balance: user.wallet_balance - feeAmount 
-            };
+            const updatedUser = { ...user, active_category: tournament.name, active_level: selectedCat };
             localStorage.setItem("user", JSON.stringify(updatedUser));
             onRegister(updatedUser);
-            alert(`Joined ${tournament.name} (${selectedCat})!`);
+            alert(`Joined ${tournament.name}!`);
             navigate('/');
         }, 1500);
     };
 
-    if (!tournament) return <div className="p-10 text-center text-gray-500">Loading Event Details...</div>;
+    if (!tournament) return <div className="p-10 text-center text-gray-500">Loading...</div>;
 
     return (
         <div className="bg-white min-h-screen font-sans pb-32">
@@ -120,61 +180,37 @@ const TournamentRegistration = ({ onRegister }) => {
                 <h1 className="text-3xl font-black italic uppercase mb-2">{tournament.name}</h1>
                 <p className="text-blue-100 font-bold text-xs uppercase tracking-widest">Registration Open</p>
             </div>
-
             <div className="p-6 -mt-8">
-                {/* Category Selector */}
                 <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6">
                     <h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3>
                     <div className="space-y-3">
                         {Object.keys(prizeStructure).map(cat => (
-                            <button key={cat} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat === cat ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
-                                <span className="font-bold text-sm">{cat}</span>
-                                {selectedCat === cat && <CheckCircle size={18}/>}
-                            </button>
+                            <button key={cat} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat === cat ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-50 text-gray-600'}`}><span className="font-bold text-sm">{cat}</span>{selectedCat === cat && <CheckCircle size={18}/>}</button>
                         ))}
                     </div>
                 </div>
-
-                {/* Schedule Preview */}
-                <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6">
-                    <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-sm uppercase tracking-widest text-gray-400 flex items-center gap-2"><Calendar size={16}/> Schedule Preview</h3><span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded">{previewSchedule.length} Matches</span></div>
-                    <div className="h-64 overflow-y-auto border rounded-xl border-gray-50"><CompactScheduleList matches={previewSchedule} myTeamID={null} onAction={null} /></div>
-                </div>
-
-                {/* Prize Pool Display */}
                 <div className="bg-blue-50 p-6 rounded-[30px] border border-blue-100 mb-24">
-                    <div className="flex items-center gap-3 mb-6">
-                        <Trophy className="text-yellow-500" size={24} fill="currentColor"/>
-                        <div><span className="block font-black text-lg text-blue-900 uppercase italic">Prize Pool</span><span className="text-[10px] font-bold text-blue-400 uppercase">{selectedCat}</span></div>
-                    </div>
-                    <div className="space-y-3">
-                        {activeDetails.places.map((place, index) => (
-                            <div key={index} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm">
-                                <span className="font-bold text-gray-500 text-xs uppercase flex items-center gap-2"><span className="text-lg">{place.icon}</span> {place.rank}</span>
-                                <span className="font-black text-lg text-blue-600">₹{place.amount}</span>
-                            </div>
-                        ))}
-                    </div>
+                    <div className="flex items-center gap-3 mb-6"><Trophy className="text-yellow-500" size={24} fill="currentColor"/><div><span className="block font-black text-lg text-blue-900 uppercase italic">Prize Pool</span><span className="text-[10px] font-bold text-blue-400 uppercase">{selectedCat}</span></div></div>
+                    <div className="space-y-3">{activeDetails.places.map((place, index) => (<div key={index} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm"><span className="font-bold text-gray-500 text-xs uppercase flex items-center gap-2"><span className="text-lg">{place.icon}</span> {place.rank}</span><span className="font-black text-lg text-blue-600">₹{place.amount}</span></div>))}</div>
                 </div>
             </div>
-
-            {/* Sticky Payment Bar */}
-            <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-6 rounded-t-[30px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50">
-                <div className="flex justify-between items-end mb-4">
-                    <div><p className="text-xs text-gray-400 font-bold uppercase">Entry Fee ({selectedCat})</p><p className="text-3xl font-black text-gray-900">₹{activeDetails.fee}</p></div>
-                    <div className="text-right"><p className="text-[10px] text-green-600 font-bold uppercase bg-green-50 px-2 py-1 rounded">Wallet: ₹10,000</p></div>
-                </div>
-                <button onClick={handlePayment} disabled={loading} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all flex justify-center gap-2">{loading ? "Processing..." : <>Pay & Register <ChevronRight/></>}</button>
+            <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-6 rounded-t-[30px] shadow-lg z-50">
+                <div className="flex justify-between items-end mb-4"><div><p className="text-xs text-gray-400 font-bold uppercase">Entry Fee</p><p className="text-3xl font-black text-gray-900">₹{activeDetails.fee}</p></div></div>
+                <button onClick={handlePayment} disabled={loading} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase tracking-widest shadow-lg flex justify-center gap-2">{loading ? "Processing..." : <>Pay & Register <ChevronRight/></>}</button>
             </div>
         </div>
     );
 };
 
-// --- COMPETE PAGE (LIST VIEW) ---
 const CompetePage = () => {
     const [tournaments, setTournaments] = useState([]);
     const navigate = useNavigate();
-    useEffect(() => { fetch('https://club28-backend.onrender.com/tournaments').then(res => res.json()).then(data => setTournaments(data)); }, []);
+    useEffect(() => { 
+        fetch(`${API_URL}/tournaments`)
+        .then(res => res.json())
+        .then(data => setTournaments(data))
+        .catch(err => console.error("API Error", err));
+    }, []);
     return (
         <div className="pb-24 bg-gray-50 min-h-screen font-sans">
             <div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg mb-[-20px]"><h1 className="text-3xl font-black italic uppercase">Events</h1><p className="text-blue-100 text-xs font-bold uppercase tracking-widest">Select a League to Join</p></div>
@@ -185,13 +221,11 @@ const CompetePage = () => {
                         <div className="bg-gray-50 p-2 rounded-full text-gray-400"><ChevronRight size={20}/></div>
                     </div>
                 ))}
-                {tournaments.length === 0 && <div className="text-center text-gray-400 mt-10">No events found.</div>}
             </div>
         </div>
     );
 };
 
-// --- ONGOING EVENT WIDGET ---
 const OngoingEvents = ({ category, myTeamID }) => {
     const [activeTab, setActiveTab] = useState("SCHEDULE");
     const [activeGroup, setActiveGroup] = useState('A'); 
@@ -204,9 +238,9 @@ const OngoingEvents = ({ category, myTeamID }) => {
     const fetchData = async () => {
         try {
             const [schRes, scoreRes, rankRes] = await Promise.all([
-                fetch('https://club28-backend.onrender.com/generate-test-season'),
-                fetch('https://club28-backend.onrender.com/scores'),
-                fetch(`https://club28-backend.onrender.com/standings/${category}`)
+                fetch(`${API_URL}/generate-test-season`),
+                fetch(`${API_URL}/scores`),
+                fetch(`${API_URL}/standings/${category}`)
             ]);
             const schData = await schRes.json();
             const scoreData = await scoreRes.json();
@@ -220,11 +254,10 @@ const OngoingEvents = ({ category, myTeamID }) => {
     };
     useEffect(() => { fetchData(); const interval = setInterval(fetchData, 10000); return () => clearInterval(interval); }, [category]);
 
-    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch('https://club28-backend.onrender.com/submit-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
-    const handleVerify = async (matchId, action) => { await fetch('https://club28-backend.onrender.com/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
+    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch(`${API_URL}/submit-score`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
+    const handleVerify = async (matchId, action) => { await fetch(`${API_URL}/verify-score`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
     
     const filteredStandings = standings.filter(t => t.group === activeGroup).sort((a, b) => b.points - a.points);
-    const getRankIcon = (index) => { if (index < 2) return <div className="bg-green-100 text-green-600 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">Q</div>; return <span className="font-bold text-gray-400 text-xs w-5 text-center">{index + 1}</span>; };
     const renderMatchAction = (match) => {
         const scoreEntry = scores[match.id];
         if (!scoreEntry) return <button onClick={() => setSelectedMatch(match)} className="bg-blue-50 text-blue-600 text-[8px] font-bold px-2 py-1 rounded border border-blue-100">+ Score</button>;
@@ -239,16 +272,14 @@ const OngoingEvents = ({ category, myTeamID }) => {
         <div className="mt-8 mb-24 px-6">
             <div className="flex items-center gap-2 mb-4"><Activity className="text-green-500 animate-pulse" size={20}/><h2 className="text-lg font-black italic uppercase">Ongoing Event</h2></div>
             <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-                <div className="bg-blue-600 p-4 flex justify-between items-center text-white"><div><p className="text-[10px] font-bold opacity-80 uppercase">Tournament</p><h3 className="font-black text-lg italic">{category}</h3></div><div className="text-right"><p className="text-[10px] font-bold opacity-80 uppercase">My Rank</p><p className="font-black text-2xl">#{standings.findIndex(t => t.name === myTeamID) + 1 || "-"}</p></div></div>
-                <div className="flex border-b border-gray-100 divide-x divide-gray-100"><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Played</p><p className="font-black text-lg">{standings.find(t => t.name === myTeamID)?.played || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Won</p><p className="font-black text-lg text-green-600">{standings.find(t => t.name === myTeamID)?.won || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Points</p><p className="font-black text-lg text-blue-600">{standings.find(t => t.name === myTeamID)?.points || 0}</p></div></div>
+                <div className="bg-blue-600 p-4 flex justify-between items-center text-white"><div><p className="text-[10px] font-bold opacity-80 uppercase">Tournament</p><h3 className="font-black text-lg italic">{category}</h3></div></div>
                 <div className="flex border-b border-gray-100"><button onClick={() => setActiveTab("SCHEDULE")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "SCHEDULE" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Schedule</button><button onClick={() => setActiveTab("STANDINGS")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "STANDINGS" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Leaderboard</button></div>
                 <div className="max-h-96 overflow-y-auto">
                     {activeTab === "SCHEDULE" ? ( <CompactScheduleList matches={schedule} myTeamID={myTeamID} onAction={renderMatchAction} /> ) : (
                         <div className="pb-4">
                             <div className="flex justify-center p-3 bg-gray-50 border-b border-gray-100"><div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">{['A', 'B', 'C', 'D'].map((group) => (<button key={group} onClick={() => setActiveGroup(group)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeGroup === group ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-600'}`}>Group {group}</button>))}</div></div>
                             <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 text-[9px] font-bold text-gray-400 uppercase"><div className="col-span-2 text-center">Rank</div><div className="col-span-6">Team</div><div className="col-span-2 text-center">Games</div><div className="col-span-2 text-center">Pts</div></div>
-                            <div className="divide-y divide-gray-50">{filteredStandings.length > 0 ? (filteredStandings.map((t, i) => (<div key={i} className={`grid grid-cols-12 gap-2 px-4 py-3 items-center ${i < 2 ? "bg-green-50 border-l-4 border-green-500" : (t.name === myTeamID ? "bg-blue-50" : "hover:bg-gray-50")}`}><div className="col-span-2 flex justify-center">{getRankIcon(i)}</div><div className="col-span-6 font-bold text-gray-700 text-xs truncate">{t.name}</div><div className="col-span-2 text-center text-gray-500 font-bold text-xs">{t.gamesWon}</div><div className="col-span-2 text-center font-black text-blue-600 text-xs">{t.points}</div></div>))) : (<div className="p-6 text-center text-gray-400 text-xs">No teams in Group {activeGroup}</div>)}</div>
-                            <div className="px-4 py-2 flex items-center gap-2 justify-end"><div className="w-2 h-2 bg-green-500 rounded-full"></div><span className="text-[9px] font-bold text-gray-400 uppercase">Qualifies for QF</span></div>
+                            <div className="divide-y divide-gray-50">{filteredStandings.length > 0 ? (filteredStandings.map((t, i) => (<div key={i} className={`grid grid-cols-12 gap-2 px-4 py-3 items-center ${i < 2 ? "bg-green-50 border-l-4 border-green-500" : (t.name === myTeamID ? "bg-blue-50" : "hover:bg-gray-50")}`}><div className="col-span-2 flex justify-center"><span className="font-bold text-gray-400 text-xs w-5 text-center">{i + 1}</span></div><div className="col-span-6 font-bold text-gray-700 text-xs truncate">{t.name}</div><div className="col-span-2 text-center text-gray-500 font-bold text-xs">{t.gamesWon}</div><div className="col-span-2 text-center font-black text-blue-600 text-xs">{t.points}</div></div>))) : (<div className="p-6 text-center text-gray-400 text-xs">No teams in Group {activeGroup}</div>)}</div>
                         </div>
                     )}
                 </div>
@@ -263,7 +294,13 @@ const HomePage = ({ user }) => {
   const [availableTournaments, setAvailableTournaments] = useState([]);
   const [viewingTournament, setViewingTournament] = useState(user?.active_category || "Club 28 League");
 
-  useEffect(() => { fetch('https://club28-backend.onrender.com/tournaments').then(res => res.json()).then(data => setAvailableTournaments(data)); }, []);
+  useEffect(() => { 
+      fetch(`${API_URL}/tournaments`)
+      .then(res => res.json())
+      .then(data => setAvailableTournaments(data))
+      .catch(err => console.log(err)); 
+  }, []);
+  
   const handleQuickAction = (action) => { if (action === 'Compete') navigate('/compete'); else alert("Coming Soon!"); };
 
   return (
@@ -282,23 +319,61 @@ const HomePage = ({ user }) => {
   );
 };
 
-const LoginPage = ({ onLogin }) => {
-  const [phone, setPhone] = useState("");
-  const handleLogin = async () => { try { const response = await fetch('https://club28-backend.onrender.com/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone, name: "Player" }) }); const data = await response.json(); onLogin(data.user); } catch (e) { alert("Backend Error"); } };
-  return <div className="min-h-screen bg-blue-600 p-8 text-white"><h1 className="text-5xl font-black mt-20">PLAYTOMIC</h1><input className="w-full bg-white/20 p-4 rounded-xl mt-8 text-white placeholder:text-blue-200 font-bold outline-none" placeholder="Phone" onChange={e => setPhone(e.target.value)}/><button onClick={handleLogin} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black mt-4 uppercase">Login</button></div>;
-};
-
 const ProfilePage = ({ user, onLogout }) => (<div className="pb-24 bg-white min-h-screen font-sans"><div className="bg-blue-600 text-white p-8 pt-12 rounded-b-[40px] shadow-lg mb-8"><div className="flex items-center gap-4 mb-6"><div className="w-16 h-16 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-2xl shadow-inner">{user?.name?.charAt(0) || "P"}</div><div><h1 className="text-2xl font-bold">{user?.name || "Player"}</h1><p className="text-xs opacity-80">Team ID: {user?.team_id || "PENDING"}</p></div></div><div className="p-6"><button onClick={onLogout} className="w-full bg-gray-50 text-gray-500 p-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-500 transition-all"><LogOut size={16}/> Log Out</button></div></div></div>);
 
+// --- MAIN CONTENT WRAPPER ---
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem("user") ? true : false);
   const [user, setUser] = useState(JSON.parse(localStorage.getItem("user")));
   const location = useLocation();
   const isAdmin = location.pathname.startsWith('/admin');
 
-  const handleLogin = (userData) => { setIsLoggedIn(true); setUser(userData); localStorage.setItem("user", JSON.stringify(userData)); };
-  const handleLogout = () => { setIsLoggedIn(false); setUser(null); localStorage.removeItem("user"); };
-  const handleRegistrationUpdate = (updatedUser) => { setUser(updatedUser); localStorage.setItem("user", JSON.stringify(updatedUser)); };
+  // Login Handler
+  const handleLogin = (userData) => { 
+      setIsLoggedIn(true); 
+      setUser(userData); 
+      localStorage.setItem("user", JSON.stringify(userData)); 
+  };
+
+  // Logout Handler
+  const handleLogout = () => { 
+      setIsLoggedIn(false); 
+      setUser(null); 
+      localStorage.removeItem("user"); 
+  };
+
+  // Registration Update
+  const handleRegistrationUpdate = (updatedUser) => { 
+      setUser(updatedUser); 
+      localStorage.setItem("user", JSON.stringify(updatedUser)); 
+  };
+
+  // --- AUTO-REFRESH USER DATA ---
+  // This fetches the latest wallet balance every time the user visits a new page
+  useEffect(() => {
+      const refreshUser = async () => {
+          if (user?.team_id) {
+              try {
+                  const res = await fetch(`${API_URL}/user/${user.team_id}`);
+                  if (res.ok) {
+                      const freshData = await res.json();
+                      // Only update if something changed (prevents infinite loops)
+                      if (JSON.stringify(freshData) !== JSON.stringify(user)) {
+                          console.log("Syncing fresh user data...");
+                          setUser(freshData);
+                          localStorage.setItem("user", JSON.stringify(freshData));
+                      }
+                  }
+              } catch (e) {
+                  console.error("Background sync failed", e);
+              }
+          }
+      };
+      
+      if(isLoggedIn && !isAdmin) {
+          refreshUser();
+      }
+  }, [location.pathname]); // Runs whenever you change pages
 
   return (
     <div className={isAdmin ? "w-full min-h-screen bg-gray-100" : "max-w-md mx-auto shadow-lg min-h-screen bg-gray-50 flex flex-col"}>
