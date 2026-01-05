@@ -32,56 +32,38 @@ def safe_int(val):
 # --- SCHEMAS ---
 class OTPRequest(BaseModel):
     phone: str
-
 class RegisterRequest(BaseModel):
-    phone: str
-    name: str
-    password: str
-
+    phone: str; name: str; password: str
 class LoginRequest(BaseModel):
-    team_id: str
-    password: str
-
+    team_id: str; password: str
 class ForgotPasswordRequest(BaseModel):
-    phone: str
-    new_password: str
-
+    phone: str; new_password: str
 class WalletUpdate(BaseModel):
-    team_id: str
-    amount: int
-
+    team_id: str; amount: int
 class JoinRequest(BaseModel):
     phone: str; tournament_name: str; level: str
-
 class TournamentCreate(BaseModel):
     name: str; type: str; status: str = "Open"; settings: list 
-
 class TournamentUpdate(BaseModel):
     id: int; name: str; status: str; settings: list
-
+class TournamentDelete(BaseModel):
+    id: int
 class MatchCreate(BaseModel):
     category: str; group_id: str; t1: str; t2: str; date: str; time: str
-
 class MatchFullUpdate(BaseModel):
     id: int; t1: str; t2: str; date: str; time: str; score: str
-
 class MatchDelete(BaseModel):
     id: int
-
 class ScoreSubmit(BaseModel):
     match_id: int; category: str; t1_name: str; t2_name: str; score: str; submitted_by_team: str
-
 class ScoreVerify(BaseModel):
     match_id: int; action: str
-
 class AdminScoreUpdate(BaseModel):
     match_id: int; score: str
-
 class MatchScheduleUpdate(BaseModel):
     match_id: int; date: str; time: str
 
 # --- AUTH & USER ENDPOINTS ---
-
 @app.post("/send-otp")
 def send_otp(data: OTPRequest):
     return {"status": "sent", "otp": "1234"}
@@ -90,18 +72,11 @@ def send_otp(data: OTPRequest):
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     exists = db.query(models.User).filter(models.User.phone == data.phone).first()
     if exists: raise HTTPException(status_code=400, detail="Phone already registered")
-    
     team_id = f"{data.name[:2].upper()}{data.phone[-2:]}"
     while db.query(models.User).filter(models.User.team_id == team_id).first():
         team_id = f"{data.name[:2].upper()}{random.randint(10,99)}"
-
-    new_user = models.User(
-        phone=data.phone, name=data.name, password=data.password, 
-        team_id=team_id, wallet_balance=0
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    new_user = models.User(phone=data.phone, name=data.name, password=data.password, team_id=team_id, wallet_balance=0)
+    db.add(new_user); db.commit(); db.refresh(new_user)
     return {"status": "created", "user": new_user}
 
 @app.post("/login")
@@ -115,11 +90,9 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 def reset_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.phone == data.phone).first()
     if not user: raise HTTPException(status_code=404, detail="Phone not found")
-    user.password = data.new_password
-    db.commit()
+    user.password = data.new_password; db.commit()
     return {"status": "updated"}
 
-# NEW: Endpoint to fetch latest user data (Wallet Sync)
 @app.get("/user/{team_id}")
 def get_user_details(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
@@ -127,17 +100,19 @@ def get_user_details(team_id: str, db: Session = Depends(get_db)):
     return user
 
 # --- ADMIN ENDPOINTS ---
-
 @app.get("/admin/players")
 def get_all_players(db: Session = Depends(get_db)):
     return db.query(models.User).all()
+
+@app.get("/admin/tournament-players/{name}")
+def get_tournament_players(name: str, db: Session = Depends(get_db)):
+    return db.query(models.User).filter(models.User.active_category == name).all()
 
 @app.post("/admin/add-wallet")
 def add_wallet_money(data: WalletUpdate, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == data.team_id).first()
     if not user: raise HTTPException(status_code=404, detail="Player not found")
-    user.wallet_balance += data.amount
-    db.commit()
+    user.wallet_balance += data.amount; db.commit()
     return {"status": "ok", "new_balance": user.wallet_balance}
 
 @app.get("/tournaments")
@@ -148,10 +123,7 @@ def get_tournaments(db: Session = Depends(get_db)):
 def create_tournament(data: TournamentCreate, db: Session = Depends(get_db)):
     fees = [safe_int(c.get('fee')) for c in data.settings]
     total_prizes = [safe_int(c.get('p1'))+safe_int(c.get('p2'))+safe_int(c.get('p3')) for c in data.settings]
-    new_t = models.Tournament(
-        name=data.name, type=data.type, status=data.status, settings=json.dumps(data.settings),
-        fee=str(min(fees)) if fees else "0", prize=str(max(total_prizes)) if total_prizes else "0"
-    )
+    new_t = models.Tournament(name=data.name, type=data.type, status=data.status, settings=json.dumps(data.settings), fee=str(min(fees)) if fees else "0", prize=str(max(total_prizes)) if total_prizes else "0")
     db.add(new_t); db.commit(); return {"message": "Created"}
 
 @app.post("/admin/edit-tournament")
@@ -166,20 +138,29 @@ def admin_edit_tournament(data: TournamentUpdate, db: Session = Depends(get_db))
         db.commit()
     return {"message": "Updated"}
 
+@app.post("/admin/delete-tournament")
+def delete_tournament(data: TournamentDelete, db: Session = Depends(get_db)):
+    t = db.query(models.Tournament).filter(models.Tournament.id == data.id).first()
+    if t:
+        db.query(models.Match).filter(models.Match.category == t.name).delete()
+        db.delete(t); db.commit()
+    return {"message": "Deleted"}
+
 @app.post("/join-tournament")
 def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.phone == data.phone).first()
     if not user: raise HTTPException(status_code=404, detail="User not found")
     
+    if user.active_category == data.tournament_name:
+        raise HTTPException(status_code=400, detail="Already registered for this event")
+
     tourney = db.query(models.Tournament).filter(models.Tournament.name == data.tournament_name).first()
     if not tourney: raise HTTPException(status_code=404, detail="Tournament not found")
 
     categories = json.loads(tourney.settings)
     required_fee = 0
     for cat in categories:
-        if cat['name'] == data.level:
-            required_fee = safe_int(cat.get('fee'))
-            break
+        if cat['name'] == data.level: required_fee = safe_int(cat.get('fee')); break
     
     if required_fee == 0 and required_fee != 0: raise HTTPException(status_code=400, detail="Invalid Category")
     if user.wallet_balance < required_fee: raise HTTPException(status_code=400, detail="Insufficient Balance")
@@ -197,7 +178,6 @@ def get_standings(category: str, level: str = None, db: Session = Depends(get_db
     users = query.all()
     matches = db.query(models.Match).filter(models.Match.category == category, models.Match.status == "Official").all()
     standings = []
-    
     for user in users:
         points, played, won = 0, 0, 0
         for m in matches:
@@ -231,10 +211,8 @@ def admin_create_match(m: MatchCreate, db: Session = Depends(get_db)):
 @app.post("/admin/edit-match-full")
 def admin_edit_match_full(data: MatchFullUpdate, db: Session = Depends(get_db)):
     m = db.query(models.Match).filter(models.Match.id == data.id).first()
-    if m:
-        m.t1 = data.t1; m.t2 = data.t2; m.date = data.date; m.time = data.time; m.score = data.score
-        if data.score: m.status = "Official"
-        db.commit()
+    if m: m.t1 = data.t1; m.t2 = data.t2; m.date = data.date; m.time = data.time; m.score = data.score; 
+    if data.score: m.status = "Official"; db.commit()
     return {"msg": "ok"}
 
 @app.post("/admin/delete-match")
