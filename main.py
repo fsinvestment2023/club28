@@ -7,7 +7,9 @@ from pydantic import BaseModel
 import json
 import random
 
+# Ensure models are created
 Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
 
 app.add_middleware(
@@ -28,6 +30,20 @@ def safe_int(val):
         if val is None or val == "": return 0
         return int(val)
     except: return 0
+
+# --- LOGIC: AUTO GROUP ASSIGNMENT ---
+def get_next_group(db: Session, tournament: str, level: str):
+    # Count existing players in this specific category
+    count = db.query(models.User).filter(
+        models.User.active_category == tournament, 
+        models.User.active_level == level
+    ).count()
+    
+    if count >= 16:
+        return None, "FULL"
+        
+    groups = ['A', 'B', 'C', 'D']
+    return groups[count % 4], "OK"
 
 # --- SCHEMAS ---
 class OTPRequest(BaseModel):
@@ -62,6 +78,8 @@ class AdminScoreUpdate(BaseModel):
     match_id: int; score: str
 class MatchScheduleUpdate(BaseModel):
     match_id: int; date: str; time: str
+class AdminAddPlayer(BaseModel):
+    name: str; phone: str; category: str; level: str
 
 # --- AUTH & USER ENDPOINTS ---
 @app.post("/send-otp")
@@ -72,9 +90,12 @@ def send_otp(data: OTPRequest):
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     exists = db.query(models.User).filter(models.User.phone == data.phone).first()
     if exists: raise HTTPException(status_code=400, detail="Phone already registered")
+    
+    # Generate ID: First 2 letters + Last 2 phone digits
     team_id = f"{data.name[:2].upper()}{data.phone[-2:]}"
     while db.query(models.User).filter(models.User.team_id == team_id).first():
         team_id = f"{data.name[:2].upper()}{random.randint(10,99)}"
+        
     new_user = models.User(phone=data.phone, name=data.name, password=data.password, team_id=team_id, wallet_balance=0)
     db.add(new_user); db.commit(); db.refresh(new_user)
     return {"status": "created", "user": new_user}
@@ -146,13 +167,41 @@ def delete_tournament(data: TournamentDelete, db: Session = Depends(get_db)):
         db.delete(t); db.commit()
     return {"message": "Deleted"}
 
+@app.post("/admin/manual-register")
+def admin_manual_register(data: AdminAddPlayer, db: Session = Depends(get_db)):
+    # 1. Check Capacity
+    group, status = get_next_group(db, data.category, data.level)
+    if status == "FULL":
+        raise HTTPException(status_code=400, detail=f"Category {data.level} is FULL (16/16)")
+
+    # 2. Check or Create User
+    user = db.query(models.User).filter(models.User.phone == data.phone).first()
+    if not user:
+         team_id = f"{data.name[:2].upper()}{data.phone[-2:]}"
+         user = models.User(phone=data.phone, name=data.name, password="password", team_id=team_id, wallet_balance=0)
+         db.add(user)
+    
+    # 3. Assign Tournament Data
+    user.active_category = data.category
+    user.active_level = data.level
+    user.group_id = group # Auto Assigned A/B/C/D
+    
+    db.commit()
+    return {"message": "User Registered", "group": group}
+
+
 @app.post("/join-tournament")
 def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.phone == data.phone).first()
     if not user: raise HTTPException(status_code=404, detail="User not found")
     
-    if user.active_category == data.tournament_name:
+    if user.active_category == data.tournament_name and user.active_level == data.level:
         raise HTTPException(status_code=400, detail="Already registered for this event")
+
+    # 1. CHECK CAPACITY & ASSIGN GROUP
+    group, status = get_next_group(db, data.tournament_name, data.level)
+    if status == "FULL":
+        raise HTTPException(status_code=400, detail=f"Category {data.level} is FULL (Limit 16).")
 
     tourney = db.query(models.Tournament).filter(models.Tournament.name == data.tournament_name).first()
     if not tourney: raise HTTPException(status_code=404, detail="Tournament not found")
@@ -165,9 +214,12 @@ def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     if required_fee == 0 and required_fee != 0: raise HTTPException(status_code=400, detail="Invalid Category")
     if user.wallet_balance < required_fee: raise HTTPException(status_code=400, detail="Insufficient Balance")
 
+    # 2. UPDATE USER
     user.wallet_balance -= required_fee
     user.active_category = data.tournament_name
     user.active_level = data.level
+    user.group_id = group # <--- SAVED TO DB
+    
     db.commit(); db.refresh(user)
     return {"status": "joined", "user": user}
 

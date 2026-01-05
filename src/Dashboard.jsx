@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus } from 'lucide-react';
 
 const Dashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] = useState("TOURNAMENTS"); 
   const [selectedTournament, setSelectedTournament] = useState(null);
+  const [activeLevelTab, setActiveLevelTab] = useState(null); // 'Advance' or 'Beginner'
+
   const [tournaments, setTournaments] = useState([]);
   const [matches, setMatches] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -13,31 +15,127 @@ const Dashboard = () => {
   const [walletTeamId, setWalletTeamId] = useState("");
   const [walletAmount, setWalletAmount] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Create/Edit Event States
   const [editingId, setEditingId] = useState(null); 
   const [eventName, setEventName] = useState("");
   const [eventType, setEventType] = useState("League");
   const [eventStatus, setEventStatus] = useState("Open");
   const [categories, setCategories] = useState([{ name: "Advance", fee: 2500, p1: 30000, p2: 15000, p3: 5000 }]);
+
+  // Manual Register States
+  const [manualName, setManualName] = useState("");
+  const [manualPhone, setManualPhone] = useState("");
+
+  // Add Match States
+  const [newMatchT1, setNewMatchT1] = useState("");
+  const [newMatchT2, setNewMatchT2] = useState("");
+  const [newMatchDate, setNewMatchDate] = useState("");
+  const [newMatchTime, setNewMatchTime] = useState("");
+
   const API_URL = "http://127.0.0.1:8000"; 
 
   const handleLogin = () => { if (password === "admin123") { setIsAuthenticated(true); fetchTournaments(); } else { alert("Wrong Password"); } };
+  
   const fetchTournaments = async () => { try { const res = await fetch(`${API_URL}/tournaments`); setTournaments(await res.json()); } catch (e) {} };
+  
   const fetchMatches = async () => { try { const res = await fetch(`${API_URL}/scores`); const data = await res.json(); const filtered = selectedTournament ? data.filter(m => m.category === selectedTournament.name) : data; setMatches(filtered.sort((a,b) => a.id - b.id)); } catch(e) {} };
+  
   const fetchPlayers = async () => { try { const res = await fetch(`${API_URL}/admin/players`); setPlayers(await res.json()); } catch(e){} };
+  
   const fetchTournamentPlayers = async () => { if(!selectedTournament) return; try { const res = await fetch(`${API_URL}/admin/tournament-players/${selectedTournament.name}`); setTournamentPlayers(await res.json()); } catch(e){} };
 
-  useEffect(() => { if(isAuthenticated) { if (activeTab === "PLAYERS") fetchPlayers(); else if (activeTab === "MANAGE" && selectedTournament) { fetchMatches(); fetchTournamentPlayers(); } else { fetchMatches(); } } }, [selectedTournament, isAuthenticated, activeTab]);
+  useEffect(() => { 
+      if(isAuthenticated) { 
+          if (activeTab === "PLAYERS") fetchPlayers(); 
+          else if (activeTab === "MANAGE" && selectedTournament) { 
+              fetchMatches(); 
+              fetchTournamentPlayers(); 
+          } else { 
+              fetchMatches(); 
+          } 
+      } 
+  }, [selectedTournament, isAuthenticated, activeTab]);
+
+  // Handle Level Tab Selection
+  useEffect(() => {
+      if (selectedTournament && !activeLevelTab) {
+          try {
+              const cats = JSON.parse(selectedTournament.settings || "[]");
+              if (cats.length > 0) setActiveLevelTab(cats[0].name);
+          } catch(e) {}
+      }
+  }, [selectedTournament]);
+
+  // --- FILTERS ---
+  const filteredPlayers = tournamentPlayers.filter(p => p.active_level === activeLevelTab);
+  const filteredMatches = matches; // Matches are already filtered by Tournament Name in fetchMatches, we could filter by level but current schema just has 'category' = tournament name.
 
   const handleAddMoney = async () => { if (!walletTeamId || !walletAmount) return alert("Fill fields"); const res = await fetch(`${API_URL}/admin/add-wallet`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: walletTeamId, amount: parseInt(walletAmount) }) }); if (res.ok) { alert("Money Added!"); setWalletTeamId(""); setWalletAmount(""); fetchPlayers(); } else { alert("Player Not Found"); } };
+  
   const handleDeleteTournament = async (id) => { if(!window.confirm("Delete this event?")) return; await fetch(`${API_URL}/admin/delete-tournament`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchTournaments(); if(selectedTournament?.id === id) setSelectedTournament(null); };
+  
   const openCreateModal = () => { setEditingId(null); setEventName(""); setEventType("League"); setEventStatus("Open"); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); setIsModalOpen(true); };
+  
   const openEditModal = (t) => { setEditingId(t.id); setEventName(t.name); setEventType(t.type); setEventStatus(t.status); try { setCategories(JSON.parse(t.settings || "[]")); } catch { setCategories([{ name: "Default", fee: t.fee, p1: 0, p2: 0, p3: 0 }]); } setIsModalOpen(true); };
+  
   const handleModalSubmit = async () => { if(!eventName) return alert("Enter Name"); const endpoint = editingId ? '/admin/edit-tournament' : '/admin/create-tournament'; const body = { id: editingId, name: eventName, type: eventType, status: eventStatus, settings: categories }; await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); setIsModalOpen(false); fetchTournaments(); };
+  
   const updateCategory = (idx, f, v) => { const n = [...categories]; n[idx][f] = v; setCategories(n); };
   const addCategoryRow = () => setCategories([...categories, { name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]);
   const removeCategory = (idx) => setCategories(categories.filter((_, i) => i !== idx));
-  const handleCreateMatch = async () => { if (!selectedTournament) return alert("Select a tournament first!"); const t1 = document.getElementById('new-t1').value || "Team 1"; const t2 = document.getElementById('new-t2').value || "Team 2"; const date = document.getElementById('new-date').value; const time = document.getElementById('new-time').value; const group = document.getElementById('new-grp').value || "A"; await fetch(`${API_URL}/admin/create-match`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ category: selectedTournament.name, group_id: group, t1, t2, date, time }) }); fetchMatches(); };
+
+  // --- NEW: Manual Registration ---
+  const handleManualRegister = async () => {
+    if (!manualName || !manualPhone) return alert("Fill name and phone");
+    try {
+        const res = await fetch(`${API_URL}/admin/manual-register`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: manualName,
+                phone: manualPhone,
+                category: selectedTournament.name,
+                level: activeLevelTab
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(`✅ Added to Group ${data.group}`);
+            setManualName("");
+            setManualPhone("");
+            fetchTournamentPlayers();
+        } else {
+            alert("Error: " + data.detail);
+        }
+    } catch(e) { console.error(e); }
+  };
+
+  const handleCreateMatch = async () => { 
+      if (!selectedTournament || !newMatchT1 || !newMatchT2) return alert("Select teams!"); 
+      
+      // Find Group of T1
+      const t1Obj = filteredPlayers.find(p => p.name === newMatchT1);
+      const group = t1Obj ? t1Obj.group_id : 'A';
+
+      await fetch(`${API_URL}/admin/create-match`, { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify({ 
+              category: selectedTournament.name, 
+              group_id: group, 
+              t1: newMatchT1, 
+              t2: newMatchT2, 
+              date: newMatchDate, 
+              time: newMatchTime 
+            }) 
+        }); 
+      fetchMatches(); 
+      setNewMatchT1(""); setNewMatchT2("");
+  };
+  
   const handleMatchUpdate = async (id) => { const t1 = document.getElementById(`t1-${id}`).value; const t2 = document.getElementById(`t2-${id}`).value; const date = document.getElementById(`date-${id}`).value; const time = document.getElementById(`time-${id}`).value; const score = document.getElementById(`score-${id}`).value; await fetch(`${API_URL}/admin/edit-match-full`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id, t1, t2, date, time, score }) }); alert("Match Updated"); fetchMatches(); };
+  
   const handleDeleteMatch = async (id) => { if(!window.confirm("Delete this match?")) return; await fetch(`${API_URL}/admin/delete-match`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchMatches(); };
 
   if (!isAuthenticated) return ( <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center"><h1 className="text-2xl font-black mb-4">ADMIN ACCESS</h1><input type="password" placeholder="Pass" className="w-full bg-gray-100 p-4 rounded-xl mb-4 font-bold text-center" value={password} onChange={e=>setPassword(e.target.value)}/><button onClick={handleLogin} className="w-full bg-black text-white p-4 rounded-xl font-bold">UNLOCK</button></div></div> );
@@ -76,33 +174,101 @@ const Dashboard = () => {
         )}
 
         {activeTab === "MANAGE" && selectedTournament && (
-            <div className="max-w-5xl">
-                <div className="flex justify-between items-center mb-8"><div><button onClick={() => setActiveTab("TOURNAMENTS")} className="text-xs font-bold text-gray-400 hover:text-gray-600 mb-1">← Back to Events</button><h2 className="text-3xl font-black text-blue-900">{selectedTournament.name}</h2></div><button onClick={fetchMatches} className="p-2 bg-white border rounded hover:bg-gray-50"><RefreshCw size={20}/></button></div>
+            <div className="max-w-6xl">
+                <div className="flex justify-between items-center mb-4"><div><button onClick={() => setActiveTab("TOURNAMENTS")} className="text-xs font-bold text-gray-400 hover:text-gray-600 mb-1">← Back to Events</button><h2 className="text-3xl font-black text-blue-900">{selectedTournament.name}</h2></div><button onClick={fetchMatches} className="p-2 bg-white border rounded hover:bg-gray-50"><RefreshCw size={20}/></button></div>
                 
-                {/* REGISTERED PLAYERS TABLE */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-8">
-                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 text-sm flex items-center gap-2"><Users size={16}/> Registered Teams ({tournamentPlayers.length})</div>
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-white text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Team Name</th><th className="p-4">Phone</th><th className="p-4">Category</th><th className="p-4">Team ID</th></tr></thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {tournamentPlayers.length > 0 ? (
-                                tournamentPlayers.map(p => (
-                                    <tr key={p.id}>
-                                        <td className="p-4 font-bold text-gray-800">{p.name}</td>
-                                        <td className="p-4 text-gray-500">{p.phone}</td>
-                                        <td className="p-4"><span className="bg-blue-100 text-blue-600 px-2 py-1 rounded text-xs font-black uppercase">{p.active_level}</span></td>
-                                        <td className="p-4 font-mono text-gray-400">{p.team_id}</td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr><td colSpan="4" className="p-8 text-center text-gray-400">No players registered yet.</td></tr>
-                            )}
-                        </tbody>
-                    </table>
+                {/* --- NEW: CATEGORY TABS --- */}
+                <div className="flex gap-2 mb-6 border-b border-gray-200">
+                    {(() => {
+                        try {
+                            const cats = JSON.parse(selectedTournament.settings || "[]");
+                            return cats.map((cat, idx) => (
+                                <button key={idx} onClick={() => setActiveLevelTab(cat.name)} className={`px-6 py-2 font-bold text-sm rounded-t-lg transition-all ${activeLevelTab === cat.name ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                                    {cat.name.toUpperCase()}
+                                </button>
+                            ));
+                        } catch(e) { return null; }
+                    })()}
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8"><h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Calendar size={18}/> Add Match</h3><div className="grid grid-cols-5 gap-3"><input id="new-grp" placeholder="Group" className="p-2 bg-gray-50 rounded border text-sm font-bold"/><input id="new-t1" placeholder="Team 1" className="p-2 bg-gray-50 rounded border text-sm font-bold"/><input id="new-t2" placeholder="Team 2" className="p-2 bg-gray-50 rounded border text-sm font-bold"/><input id="new-date" type="date" className="p-2 bg-gray-50 rounded border text-sm font-bold"/><input id="new-time" type="time" className="p-2 bg-gray-50 rounded border text-sm font-bold"/></div><button onClick={handleCreateMatch} className="w-full mt-3 bg-black text-white font-bold py-3 rounded-lg text-sm hover:bg-gray-800">+ Add Match</button></div>
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Schedule</th><th className="p-4">Score</th><th className="p-4 text-right">Actions</th></tr></thead><tbody className="divide-y divide-gray-50">{matches.map(m => (<tr key={m.id}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-32"/></div></td><td className="p-4"><div className="flex flex-col gap-1"><input type="date" id={`date-${m.id}`} defaultValue={m.date} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-28"/><input type="time" id={`time-${m.id}`} defaultValue={m.time} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-20"/></div></td><td className="p-4"><input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-gray-100 text-center rounded font-bold p-2"/></td><td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody></table></div>
+                <div className="grid grid-cols-12 gap-8">
+                    {/* LEFT COLUMN: Players */}
+                    <div className="col-span-5">
+                        {/* MANUAL REGISTRATION FORM */}
+                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-4">
+                            <h3 className="font-bold text-gray-700 mb-2 flex items-center gap-2 text-xs uppercase"><UserPlus size={14}/> Add Player to {activeLevelTab}</h3>
+                            <div className="flex gap-2">
+                                <input value={manualName} onChange={e=>setManualName(e.target.value)} placeholder="Name" className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/>
+                                <input value={manualPhone} onChange={e=>setManualPhone(e.target.value)} placeholder="Phone" className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/>
+                                <button onClick={handleManualRegister} className="flex-1 bg-black text-white text-xs font-bold rounded">ADD</button>
+                            </div>
+                        </div>
+
+                        {/* FILTERED PLAYER LIST */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 text-sm flex justify-between items-center">
+                                <span>Teams ({filteredPlayers.length})</span>
+                                <span className={filteredPlayers.length >= 16 ? "text-red-500 text-xs" : "text-green-500 text-xs"}>{filteredPlayers.length}/16 Filled</span>
+                            </div>
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-white text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-3">Name</th><th className="p-3">Grp</th><th className="p-3">ID</th></tr></thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {filteredPlayers.length > 0 ? (
+                                        filteredPlayers.map(p => (
+                                            <tr key={p.id}>
+                                                <td className="p-3 font-bold text-gray-800">{p.name}</td>
+                                                <td className="p-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">{p.group_id || "-"}</span></td>
+                                                <td className="p-3 font-mono text-gray-400 text-xs">{p.team_id}</td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr><td colSpan="3" className="p-4 text-center text-gray-400 text-xs">No players in {activeLevelTab}.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: Matches */}
+                    <div className="col-span-7">
+                        {/* ADD MATCH FORM (Filtered Dropdowns) */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-4">
+                            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Calendar size={18}/> Add Match ({activeLevelTab})</h3>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                <select onChange={e=>setNewMatchT1(e.target.value)} value={newMatchT1} className="p-2 bg-gray-50 rounded border text-sm font-bold">
+                                    <option value="">Select Team 1</option>
+                                    {filteredPlayers.map(p => <option key={p.id} value={p.name}>{p.name} (Gr. {p.group_id})</option>)}
+                                </select>
+                                <select onChange={e=>setNewMatchT2(e.target.value)} value={newMatchT2} className="p-2 bg-gray-50 rounded border text-sm font-bold">
+                                    <option value="">Select Team 2</option>
+                                    {filteredPlayers.filter(p => p.name !== newMatchT1).map(p => <option key={p.id} value={p.name}>{p.name} (Gr. {p.group_id})</option>)}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3 mb-3">
+                                <input onChange={e=>setNewMatchDate(e.target.value)} type="date" className="p-2 bg-gray-50 rounded border text-sm font-bold"/>
+                                <input onChange={e=>setNewMatchTime(e.target.value)} type="time" className="p-2 bg-gray-50 rounded border text-sm font-bold"/>
+                                <button onClick={handleCreateMatch} className="bg-black text-white font-bold rounded-lg text-sm hover:bg-gray-800">+ Add Match</button>
+                            </div>
+                        </div>
+
+                        {/* MATCH LIST */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Schedule</th><th className="p-4">Score</th><th className="p-4 text-right">Actions</th></tr></thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {matches.map(m => (
+                                        <tr key={m.id}>
+                                            <td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-32"/></div></td>
+                                            <td className="p-4"><div className="flex flex-col gap-1"><input type="date" id={`date-${m.id}`} defaultValue={m.date} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-28"/><input type="time" id={`time-${m.id}`} defaultValue={m.time} className="p-1 bg-gray-50 rounded text-xs font-bold border-none w-20"/></div></td>
+                                            <td className="p-4"><input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-gray-100 text-center rounded font-bold p-2"/></td>
+                                            <td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         )}
       </div>
