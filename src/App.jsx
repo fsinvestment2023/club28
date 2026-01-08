@@ -38,7 +38,7 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
 
 // --- AUTH PAGES ---
 const LoginPage = ({ onLogin }) => {
-  const [mode, setMode] = useState("LOGIN"); const [phone, setPhone] = useState(""); const [otp, setOtp] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [teamId, setTeamId] = useState(""); const [loading, setLoading] = useState(false); const API_URL = "http://127.0.0.1:8000";
+  const [mode, setMode] = useState("LOGIN"); const [phone, setPhone] = useState(""); const [otp, setOtp] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [teamId, setTeamId] = useState(""); const [loading, setLoading] = useState(false); const API_URL = "https://club28-backend-98cy.onrender.com";
   const handleSendOtp = async (nextMode) => { if(phone.length < 10) return alert("Enter valid phone"); setLoading(true); try { await fetch(`${API_URL}/send-otp`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({phone})}); alert("OTP Sent: 1234"); setMode(nextMode); } catch(e) { alert("Server Error"); } setLoading(false); };
   const handleVerifyOtp = (nextMode) => { if(otp !== "1234") return alert("Wrong OTP (Hint: 1234)"); setMode(nextMode); };
   const handleRegister = async () => { if(!name || !password) return alert("Fill all fields"); setLoading(true); try { const res = await fetch(`${API_URL}/register`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, name, password }) }); const data = await res.json(); if(res.ok) { alert(`Registration Success! Team ID: ${data.user.team_id}`); setTeamId(data.user.team_id); setMode("LOGIN"); } else { alert(data.detail); } } catch(e) { alert("Registration Error"); } setLoading(false); };
@@ -59,13 +59,13 @@ const TournamentRegistration = ({ onRegister }) => {
     // NEW STATES
     const [schedule, setSchedule] = useState([]);
     
-    useEffect(() => { const loadData = async () => { const tRes = await fetch('http://127.0.0.1:8000/tournaments'); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); try { setSchedule(JSON.parse(found.schedule || "[]")); } catch {} } }; loadData(); }, [id]);
+    useEffect(() => { const loadData = async () => { const tRes = await fetch('https://club28-backend-98cy.onrender.com/tournaments'); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); try { setSchedule(JSON.parse(found.schedule || "[]")); } catch {} } }; loadData(); }, [id]);
     
     const handlePayment = async () => {
         setLoading(true); 
         const user = JSON.parse(localStorage.getItem("user"));
         try { 
-            const response = await fetch('http://127.0.0.1:8000/join-tournament', { 
+            const response = await fetch('https://club28-backend-98cy.onrender.com/join-tournament', { 
                 method: 'POST', 
                 headers: { 'Content-Type': 'application/json' }, 
                 body: JSON.stringify({ 
@@ -144,7 +144,7 @@ const CompetePage = () => {
     const navigate = useNavigate();
     
     useEffect(() => { 
-        fetch('http://127.0.0.1:8000/tournaments')
+        fetch('https://club28-backend-98cy.onrender.com/tournaments')
         .then(res => res.json())
         .then(data => {
             setTournaments(data);
@@ -231,9 +231,9 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
             const safeLevel = level || "";
             const encodedLevel = encodeURIComponent(safeLevel);
             const [schRes, scoreRes, rankRes] = await Promise.all([ 
-                fetch('http://127.0.0.1:8000/generate-test-season'), 
-                fetch('http://127.0.0.1:8000/scores'), 
-                fetch(`http://127.0.0.1:8000/standings?tournament=${category}&city=${city}&level=${encodedLevel}`) 
+                fetch('https://club28-backend-98cy.onrender.com/generate-test-season'), 
+                fetch('https://club28-backend-98cy.onrender.com/scores'), 
+                fetch(`https://club28-backend-98cy.onrender.com/standings?tournament=${category}&city=${city}&level=${encodedLevel}`) 
             ]); 
             const schData = await schRes.json(); 
             const scoreData = await scoreRes.json(); 
@@ -251,8 +251,8 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
     
     useEffect(() => { fetchData(); const interval = setInterval(fetchData, 10000); return () => clearInterval(interval); }, [category, city, level]);
     
-    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch('http://127.0.0.1:8000/submit-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
-    const handleVerify = async (matchId, action) => { await fetch('http://127.0.0.1:8000/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
+    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch('https://club28-backend-98cy.onrender.com/submit-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
+    const handleVerify = async (matchId, action) => { await fetch('https://club28-backend-98cy.onrender.com/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
     const filteredStandings = standings.filter(t => t.group === activeGroup).sort((a, b) => b.points - a.points);
     const getRankIcon = (index) => { if (index < 2) return <div className="bg-green-100 text-green-600 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">Q</div>; return <span className="font-bold text-gray-400 text-xs w-5 text-center">{index + 1}</span>; };
     const renderMatchAction = (match) => { const scoreEntry = scores[match.id]; if (!scoreEntry) return <button onClick={() => setSelectedMatch(match)} className="bg-blue-50 text-blue-600 text-[8px] font-bold px-2 py-1 rounded border border-blue-100">+ Score</button>; if (scoreEntry.status === "Official") return <span className="text-green-600 text-[9px] font-black">{scoreEntry.score}</span>; if (scoreEntry.status === "Disputed") return <span className="text-red-500 text-[9px] font-black">⚠</span>; const iSubmittedIt = scoreEntry.submitted_by_team === myTeamID; if (iSubmittedIt) return <span className="text-gray-300 text-[8px] font-bold">Wait...</span>; return <div className="flex gap-1"><button onClick={() => handleVerify(match.id, "DENY")} className="text-red-500 text-[8px] font-bold border border-red-100 px-1 rounded">X</button><button onClick={() => handleVerify(match.id, "APPROVE")} className="text-green-600 text-[8px] font-bold border border-green-100 px-1 rounded">✓</button></div>; };
@@ -276,12 +276,12 @@ const HomePage = ({ user, onRefresh }) => {
   }, [user]);
 
   useEffect(() => { 
-      fetch('http://127.0.0.1:8000/tournaments').then(res => res.json()).then(data => setAvailableTournaments(data)); 
+      fetch('https://club28-backend-98cy.onrender.com/tournaments').then(res => res.json()).then(data => setAvailableTournaments(data)); 
       
       const refreshUser = async () => {
           if (!user?.team_id) return;
           try {
-              const res = await fetch(`http://127.0.0.1:8000/user/${user.team_id}`);
+              const res = await fetch(`https://club28-backend-98cy.onrender.com/user/${user.team_id}`);
               if (res.ok) {
                   const latestUser = await res.json();
                   onRefresh(latestUser); 
