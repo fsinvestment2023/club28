@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard } from 'lucide-react';
+import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard, AlertCircle } from 'lucide-react';
 import Dashboard from './Dashboard.jsx'; 
 
 // --- SHARED COMPONENTS ---
@@ -53,21 +53,18 @@ const LoginPage = ({ onLogin }) => {
   );
 };
 
+// --- REGISTRATION SCREEN ---
 const TournamentRegistration = ({ onRegister }) => {
     const navigate = useNavigate(); const { id } = useParams(); const [tournament, setTournament] = useState(null); const [categories, setCategories] = useState([]); const [selectedCat, setSelectedCat] = useState(null); const [loading, setLoading] = useState(false);
     const [schedule, setSchedule] = useState([]);
-    
-    // NEW: Partner State
     const [partnerId, setPartnerId] = useState("");
     
     useEffect(() => { const loadData = async () => { const tRes = await fetch('http://127.0.0.1:8000/tournaments'); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); try { setSchedule(JSON.parse(found.schedule || "[]")); } catch {} } }; loadData(); }, [id]);
     
-    // UPDATED PAYMENT HANDLER
-    const handlePayment = async (mode) => {
+    const handlePayment = async (mode, scope) => {
         setLoading(true); 
         const user = JSON.parse(localStorage.getItem("user"));
         
-        // Doubles Check
         if (tournament.format === "Doubles" && !partnerId) {
             alert("This is a Doubles Event. Please enter your Partner's Team ID.");
             setLoading(false);
@@ -84,8 +81,9 @@ const TournamentRegistration = ({ onRegister }) => {
                     city: tournament.city, 
                     sport: tournament.sport, 
                     level: selectedCat.name,
-                    partner_team_id: partnerId, // SEND PARTNER ID
-                    payment_mode: mode // SEND PAYMENT MODE
+                    partner_team_id: partnerId,
+                    payment_mode: mode,
+                    payment_scope: scope // "INDIVIDUAL" or "TEAM"
                 }) 
             });
             const data = await response.json(); 
@@ -94,15 +92,13 @@ const TournamentRegistration = ({ onRegister }) => {
                 throw new Error(errorMsg || "Payment Failed"); 
             }
             
-            // Handle Success Cases
             if (data.status === "pending_partner") {
-                alert(`You have registered! Notification sent to ${partnerId}. They must pay their share to confirm.`);
+                alert(`Registered! We notified ${partnerId}. They must confirm payment.`);
             } else {
-                // Single Player Success
                 const updatedUser = { ...user, wallet_balance: data.user.wallet_balance, registrations: data.registrations };
                 localStorage.setItem("user", JSON.stringify(updatedUser)); 
                 onRegister(updatedUser); 
-                alert(`Success! Joined ${tournament.name}`); 
+                alert(`Success! Team Registered.`); 
             }
             navigate('/');
         } catch (error) { 
@@ -116,17 +112,17 @@ const TournamentRegistration = ({ onRegister }) => {
     if (!tournament || !selectedCat) return <div className="p-10 text-center text-gray-500">Loading Event...</div>;
     const prizes = [ { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, { rank: '3rd', amount: selectedCat.p3, icon: '🥉' } ];
     
-    // Fee Display Logic (Split for Doubles)
-    const displayFee = tournament.format === "Doubles" ? selectedCat.fee / 2 : selectedCat.fee;
+    const perPersonFee = selectedCat.fee;
+    const teamFee = selectedCat.fee * 2;
+    const isDoubles = tournament.format === "Doubles";
 
     return (
-        <div className="bg-white min-h-screen pb-32"><div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg"><button onClick={() => navigate('/compete')} className="mb-6 bg-white/20 p-2 rounded-full"><ArrowLeft size={24}/></button><h1 className="text-3xl font-black italic uppercase mb-2">{tournament.name}</h1><p className="text-blue-100 font-bold text-xs uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> {tournament.city} • {tournament.sport} <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] ml-2">{tournament.format || "Singles"}</span></p></div>
+        <div className="bg-white min-h-screen pb-40"><div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg"><button onClick={() => navigate('/compete')} className="mb-6 bg-white/20 p-2 rounded-full"><ArrowLeft size={24}/></button><h1 className="text-3xl font-black italic uppercase mb-2">{tournament.name}</h1><p className="text-blue-100 font-bold text-xs uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> {tournament.city} • {tournament.sport} <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] ml-2">{tournament.format || "Singles"}</span></p></div>
         
         <div className="p-6 -mt-8">
-            <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6"><h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3><div className="space-y-3">{categories.map((cat, idx) => (<button key={idx} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat.name === cat.name ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}><div className="text-left"><span className="font-bold text-sm block">{cat.name}</span><span className="text-[10px] font-bold opacity-70">Total Fee: ₹{cat.fee}</span></div>{selectedCat.name === cat.name && <CheckCircle size={18}/>}</button>))}</div></div>
+            <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6"><h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3><div className="space-y-3">{categories.map((cat, idx) => (<button key={idx} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat.name === cat.name ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}><div className="text-left"><span className="font-bold text-sm block">{cat.name}</span><span className="text-[10px] font-bold opacity-70">Per Person: ₹{cat.fee}</span></div>{selectedCat.name === cat.name && <CheckCircle size={18}/>}</button>))}</div></div>
             
-            {/* PARTNER INPUT FOR DOUBLES */}
-            {tournament.format === "Doubles" && (
+            {isDoubles && (
                 <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
                     <div className="flex items-center gap-2 mb-4"><UserPlus className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Doubles Partner</h3></div>
                     <input 
@@ -135,7 +131,6 @@ const TournamentRegistration = ({ onRegister }) => {
                         placeholder="Enter Partner's Team ID (e.g. SA25)" 
                         className="w-full p-4 bg-gray-50 rounded-xl font-bold border border-gray-200 outline-none focus:border-blue-500 transition-all uppercase"
                     />
-                    <p className="text-[10px] text-gray-400 mt-2 font-bold">Entry fee is split. You pay your half now.</p>
                 </div>
             )}
 
@@ -148,22 +143,27 @@ const TournamentRegistration = ({ onRegister }) => {
             <div className="bg-blue-50 p-6 rounded-[30px] border border-blue-100 mb-24"><div className="flex items-center gap-3 mb-6"><Trophy className="text-yellow-500" size={24} fill="currentColor"/><div><span className="block font-black text-lg text-blue-900 uppercase italic">Prize Pool</span><span className="text-[10px] font-bold text-blue-400 uppercase">{selectedCat.name} Only</span></div></div><div className="space-y-3">{prizes.map((p, i) => (<div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm"><span className="font-bold text-gray-500 text-xs uppercase flex items-center gap-2"><span className="text-lg">{p.icon}</span> {p.rank} Place</span><span className="font-black text-lg text-blue-600">₹{p.amount}</span></div>))}</div></div>
         </div>
         
-        {/* PAYMENT BUTTONS */}
+        {/* PAYMENT OPTIONS */}
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-6 rounded-t-[30px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50">
-            <div className="flex justify-between items-end mb-4">
-                <div><p className="text-xs text-gray-400 font-bold uppercase">{tournament.format === "Doubles" ? "Your Share" : "Entry Fee"}</p><p className="text-3xl font-black text-gray-900">₹{displayFee}</p></div>
-                <div className="text-right"><p className="text-[10px] text-green-600 font-bold uppercase bg-green-50 px-2 py-1 rounded">Wallet: ₹{JSON.parse(localStorage.getItem("user"))?.wallet_balance || 0}</p></div>
-            </div>
-            <div className="flex gap-2">
-                <button onClick={() => handlePayment("RAZORPAY")} disabled={loading} className="flex-1 bg-gray-900 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-all"><CreditCard size={16}/> Razorpay</button>
-                <button onClick={() => handlePayment("WALLET")} disabled={loading} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"><Wallet size={16}/> Pay Wallet</button>
-            </div>
+            {isDoubles ? (
+                <>
+                <div className="mb-4">
+                     <button onClick={() => handlePayment("WALLET", "INDIVIDUAL")} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all mb-2">Pay My Share (₹{perPersonFee})</button>
+                     <p className="text-[9px] text-gray-400 text-center font-bold flex items-center justify-center gap-1"><AlertCircle size={10}/> No refund if partner doesn't join.</p>
+                </div>
+                <button onClick={() => handlePayment("WALLET", "TEAM")} className="w-full bg-black text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-all">Pay Full Team (₹{teamFee})</button>
+                </>
+            ) : (
+                <button onClick={() => handlePayment("WALLET", "INDIVIDUAL")} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all">Pay Entry (₹{perPersonFee})</button>
+            )}
+            
+            <div className="text-center mt-3"><p className="text-[10px] text-green-600 font-bold uppercase bg-green-50 px-2 py-1 rounded inline-block">Wallet: ₹{JSON.parse(localStorage.getItem("user"))?.wallet_balance || 0}</p></div>
         </div>
     </div>
     );
 };
 
-// ... (CompetePage, OngoingEvents, ProfilePage - Same as before) ...
+// ... (Rest of app.jsx: CompetePage, OngoingEvents, ProfilePage, AppContent SAME AS BEFORE) ...
 const CompetePage = () => {
     const [tournaments, setTournaments] = useState([]);
     const [filteredTournaments, setFilteredTournaments] = useState([]);
@@ -215,20 +215,6 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
     );
 };
 
-const ProfilePage = ({ user, onLogout }) => {
-    const [activeTab, setActiveTab] = useState("INFO");
-    const [editMode, setEditMode] = useState(false);
-    const [formData, setFormData] = useState({ email: user?.email || "", gender: user?.gender || "", dob: user?.dob || "", play_location: user?.play_location || "" });
-    const [history, setHistory] = useState([]);
-    useEffect(() => { if(user?.team_id) { fetch(`http://127.0.0.1:8000/user/${user.team_id}/history`).then(res => res.json()).then(data => setHistory(data)); } }, [user]);
-    const handleSave = async () => { const res = await fetch('http://127.0.0.1:8000/user/update-profile', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, email: formData.email, gender: formData.gender, dob: formData.dob, play_location: formData.play_location }) }); if(res.ok) { alert("Profile Updated!"); setEditMode(false); window.location.reload(); } };
-    const handleAddMoney = async () => { const amount = prompt("Enter amount to add (Simulated Razorpay):", "500"); if(!amount) return; const res = await fetch('http://127.0.0.1:8000/admin/add-wallet', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) }) }); if(res.ok) { alert(`₹${amount} added successfully! (Simulated)`); window.location.reload(); } };
-    return (
-        <div className="pb-24 bg-white min-h-screen font-sans"><div className="bg-blue-600 text-white p-8 pt-12 rounded-b-[40px] shadow-lg mb-8"><div className="flex items-center gap-4 mb-6"><div className="w-16 h-16 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-2xl shadow-inner">{user?.name?.charAt(0) || "P"}</div><div><h1 className="text-2xl font-bold">{user?.name || "Player"}</h1><p className="text-xs opacity-80">Team ID: {user?.team_id}</p><p className="text-xs font-bold bg-blue-700 px-2 py-1 rounded inline-block mt-1">₹{user?.wallet_balance}</p></div></div><div className="flex bg-blue-700 p-1 rounded-xl">{['INFO', 'WALLET', 'HISTORY'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === tab ? 'bg-white text-blue-600 shadow' : 'text-blue-200'}`}>{tab}</button>))}</div></div><div className="p-6">{activeTab === "INFO" && (<div className="space-y-4"><h3 className="font-black text-lg text-gray-800 flex items-center gap-2"><User size={20}/> Personal Information</h3><div className="grid gap-3"><div><label className="text-[10px] font-bold text-gray-400 uppercase">Email</label><input disabled={!editMode} value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Gender</label><select disabled={!editMode} value={formData.gender} onChange={e=>setFormData({...formData, gender: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Date of Birth</label><input type="date" disabled={!editMode} value={formData.dob} onChange={e=>setFormData({...formData, dob: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Where do you play?</label><input disabled={!editMode} value={formData.play_location} onChange={e=>setFormData({...formData, play_location: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div></div>{editMode ? (<button onClick={handleSave} className="w-full bg-green-600 text-white p-4 rounded-xl font-black uppercase flex items-center justify-center gap-2 shadow-lg"><Save size={18}/> Save Changes</button>) : (<button onClick={() => setEditMode(true)} className="w-full bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg">Edit Profile</button>)}</div>)}{activeTab === "WALLET" && (<div className="text-center"><Wallet size={48} className="mx-auto text-blue-200 mb-4"/><h2 className="text-4xl font-black text-gray-800 mb-2">₹{user?.wallet_balance}</h2><p className="text-xs font-bold text-gray-400 uppercase mb-8">Current Balance</p><button onClick={handleAddMoney} className="w-full bg-black text-white p-4 rounded-xl font-black uppercase shadow-lg mb-4">Add Money +</button><p className="text-[10px] text-gray-400">Secured by Razorpay</p></div>)}{activeTab === "HISTORY" && (<div><h3 className="font-black text-lg text-gray-800 flex items-center gap-2 mb-4"><FileText size={20}/> Match History</h3>{history.length > 0 ? (<div className="space-y-2">{history.map(m => (<div key={m.id} className="bg-gray-50 p-4 rounded-xl flex justify-between items-center border border-gray-100"><div><p className="text-[10px] font-bold text-gray-400 uppercase">{m.date}</p><p className="font-black text-sm">{m.t1} vs {m.t2}</p></div><div className="text-right"><p className="font-black text-lg text-blue-600">{m.score || "-"}</p><p className="text-[9px] font-bold text-gray-400 uppercase">{m.status}</p></div></div>))}</div>) : (<p className="text-center text-gray-400 text-xs font-bold mt-10">No matches played yet.</p>)}</div>)}<div className="mt-12 pt-12 border-t border-gray-100"><button onClick={onLogout} className="w-full bg-red-50 text-red-500 p-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-all"><LogOut size={16}/> Log Out</button></div></div></div>
-    );
-};
-
-// --- HOME PAGE (UPDATED WITH PENDING NOTIFICATIONS) ---
 const HomePage = ({ user, onRefresh }) => {
   const navigate = useNavigate(); 
   const [availableTournaments, setAvailableTournaments] = useState([]);
@@ -237,10 +223,7 @@ const HomePage = ({ user, onRefresh }) => {
   
   useEffect(() => { 
       if (user?.registrations?.length > 0) {
-          // If no viewing key set yet, set default
-          if (!viewingKey) {
-             setViewingKey(`${user.registrations[0].tournament}|${user.registrations[0].city}`);
-          }
+          if (!viewingKey) { setViewingKey(`${user.registrations[0].tournament}|${user.registrations[0].city}`); }
       }
   }, [user]);
 
@@ -255,10 +238,8 @@ const HomePage = ({ user, onRefresh }) => {
                   const latestUser = await res.json();
                   onRefresh(latestUser); 
               }
-              // Fetch Pending Requests
               const pendRes = await fetch(`http://127.0.0.1:8000/user/${user.team_id}/pending`);
               if (pendRes.ok) setPendingRequests(await pendRes.json());
-
           } catch(e) { console.error("Sync failed", e); }
       };
       refreshUser();
@@ -266,61 +247,37 @@ const HomePage = ({ user, onRefresh }) => {
 
   const handleConfirmPartner = async (regId) => {
       try {
-          const res = await fetch('http://127.0.0.1:8000/confirm-partner', {
-              method: 'POST',
-              headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ reg_id: regId, payment_mode: "WALLET" })
-          });
+          const res = await fetch('http://127.0.0.1:8000/confirm-partner', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ reg_id: regId, payment_mode: "WALLET" }) });
           const data = await res.json();
-          if (res.ok) {
-              alert("Registration Confirmed!");
-              window.location.reload();
-          } else {
-              alert("Error: " + data.detail);
-          }
+          if (res.ok) { alert("Registration Confirmed!"); window.location.reload(); } else { alert("Error: " + data.detail); }
       } catch(e) { console.error(e); }
   };
 
   const [viewName, viewCity] = viewingKey ? viewingKey.split('|') : ["", ""];
   const currentRegistration = user?.registrations?.find(r => r.tournament === viewName && r.city === viewCity);
-
   const handleQuickAction = (action) => { if (action === 'Compete') navigate('/compete'); else alert("Coming Soon!"); };
   
   return (
-    <div className="pb-24 bg-gray-50 min-h-screen font-sans text-gray-900"><div className="bg-blue-600 p-6 pt-12 pb-20 rounded-b-[40px] shadow-lg mb-[-40px]"><div className="flex justify-between items-center mb-6 text-white"><h1 className="text-xl font-extrabold italic tracking-wide">PLAYTOMIC</h1><div className="flex gap-4"><Search size={20} /><Bell size={20} /></div></div><div className="flex justify-between items-center text-white"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-xl">{user?.name?.charAt(0)}</div><div><h2 className="text-xl font-bold">{user?.name}</h2><p className="text-blue-200 text-xs font-bold">{user?.team_id}</p></div></div><div className="relative">
-    <select value={viewingKey} onChange={(e) => setViewingKey(e.target.value)} className="appearance-none bg-blue-700 text-white font-bold text-xs py-2 pl-3 pr-8 rounded-lg outline-none">
-        {user?.registrations && user.registrations.length > 0 ? (
-             user.registrations.map((r, idx) => (
-                <option key={idx} value={`${r.tournament}|${r.city}`}>{r.tournament} ({r.city})</option>
-             ))
-        ) : (
-             <option>No events</option>
-        )}
-    </select>
-    <ChevronDown size={14} className="absolute right-2 top-2.5 text-white pointer-events-none" /></div></div></div><div className="mx-6 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 flex justify-between items-center relative z-10 mb-8"><div className="text-center flex-1 border-r border-gray-100"><p className="text-[10px] text-gray-400 font-bold uppercase">Wallet</p><p className="text-xl font-black text-gray-800">₹{user?.wallet_balance || 0}</p></div><div className="text-center flex-1"><p className="text-[10px] text-gray-400 font-bold uppercase">Matches</p><p className="text-xl font-black text-gray-800">0</p></div></div><div className="px-6 grid grid-cols-4 gap-4 text-center mb-4">{['Book Court', 'Learn', 'Compete', 'Find Match'].map((item, i) => (<div key={i} onClick={() => handleQuickAction(item)} className="flex flex-col items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 transition-transform"><div className={`w-14 h-14 rounded-full shadow-sm border border-gray-100 flex items-center justify-center ${item === 'Compete' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-600'}`}>{item === 'Compete' ? <Trophy size={24} /> : <div className="w-6 h-6 bg-blue-100 rounded-full"/>}</div><span className="text-[10px] font-bold text-gray-600">{item}</span></div>))}</div>
+    <div className="pb-24 bg-gray-50 min-h-screen font-sans text-gray-900"><div className="bg-blue-600 p-6 pt-12 pb-20 rounded-b-[40px] shadow-lg mb-[-40px]"><div className="flex justify-between items-center mb-6 text-white"><h1 className="text-xl font-extrabold italic tracking-wide">PLAYTOMIC</h1><div className="flex gap-4"><Search size={20} /><Bell size={20} /></div></div><div className="flex justify-between items-center text-white"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-xl">{user?.name?.charAt(0)}</div><div><h2 className="text-xl font-bold">{user?.name}</h2><p className="text-blue-200 text-xs font-bold">{user?.team_id}</p></div></div><div className="relative"><select value={viewingKey} onChange={(e) => setViewingKey(e.target.value)} className="appearance-none bg-blue-700 text-white font-bold text-xs py-2 pl-3 pr-8 rounded-lg outline-none">{user?.registrations && user.registrations.length > 0 ? (user.registrations.map((r, idx) => (<option key={idx} value={`${r.tournament}|${r.city}`}>{r.tournament} ({r.city})</option>))) : (<option>No events</option>)}</select><ChevronDown size={14} className="absolute right-2 top-2.5 text-white pointer-events-none" /></div></div></div><div className="mx-6 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 flex justify-between items-center relative z-10 mb-8"><div className="text-center flex-1 border-r border-gray-100"><p className="text-[10px] text-gray-400 font-bold uppercase">Wallet</p><p className="text-xl font-black text-gray-800">₹{user?.wallet_balance || 0}</p></div><div className="text-center flex-1"><p className="text-[10px] text-gray-400 font-bold uppercase">Matches</p><p className="text-xl font-black text-gray-800">0</p></div></div><div className="px-6 grid grid-cols-4 gap-4 text-center mb-4">{['Book Court', 'Learn', 'Compete', 'Find Match'].map((item, i) => (<div key={i} onClick={() => handleQuickAction(item)} className="flex flex-col items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 transition-transform"><div className={`w-14 h-14 rounded-full shadow-sm border border-gray-100 flex items-center justify-center ${item === 'Compete' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-600'}`}>{item === 'Compete' ? <Trophy size={24} /> : <div className="w-6 h-6 bg-blue-100 rounded-full"/>}</div><span className="text-[10px] font-bold text-gray-600">{item}</span></div>))}</div>
     
-    {/* PENDING NOTIFICATIONS */}
-    {pendingRequests.length > 0 && (
-        <div className="mx-6 mb-4">
-            <h3 className="font-bold text-gray-700 text-xs uppercase mb-2">Pending Requests</h3>
-            {pendingRequests.map(req => (
-                <div key={req.reg_id} className="bg-orange-50 border border-orange-200 p-4 rounded-xl mb-2 flex justify-between items-center">
-                    <div>
-                        <p className="text-xs font-bold text-orange-800 uppercase">{req.tournament} ({req.level})</p>
-                        <p className="text-[10px] text-gray-600">Invited by <b>{req.partner}</b></p>
-                    </div>
-                    <button onClick={() => handleConfirmPartner(req.reg_id)} className="bg-orange-500 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm">Pay ₹{req.fee_share} & Join</button>
-                </div>
-            ))}
-        </div>
-    )}
+    {pendingRequests.length > 0 && (<div className="mx-6 mb-4"><h3 className="font-bold text-gray-700 text-xs uppercase mb-2">Pending Requests</h3>{pendingRequests.map(req => (<div key={req.reg_id} className="bg-orange-50 border border-orange-200 p-4 rounded-xl mb-2 flex justify-between items-center"><div><p className="text-xs font-bold text-orange-800 uppercase">{req.tournament} ({req.level})</p><p className="text-[10px] text-gray-600">Invited by <b>{req.partner}</b></p></div><button onClick={() => handleConfirmPartner(req.reg_id)} className="bg-orange-500 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm">Pay ₹{req.fee_share} & Join</button></div>))}</div>)}
 
-    {currentRegistration ? 
-        <OngoingEvents category={viewName} city={viewCity} level={currentRegistration.level} myTeamID={user?.team_id} /> 
-        : 
-        <div className="mx-6 mt-16 p-6 bg-white rounded-3xl border border-dashed border-gray-300 text-center"><Trophy className="mx-auto text-gray-300 mb-2" size={32}/><p className="text-xs font-bold text-gray-400 mb-4">Not registered for any active event.</p><button onClick={() => navigate('/compete')} className="bg-blue-600 text-white text-xs font-black uppercase px-6 py-3 rounded-xl shadow-lg">Find a League</button></div>}
+    {currentRegistration ? (<OngoingEvents category={viewName} city={viewCity} level={currentRegistration.level} myTeamID={user?.team_id} />) : (<div className="mx-6 mt-16 p-6 bg-white rounded-3xl border border-dashed border-gray-300 text-center"><Trophy className="mx-auto text-gray-300 mb-2" size={32}/><p className="text-xs font-bold text-gray-400 mb-4">Not registered for any active event.</p><button onClick={() => navigate('/compete')} className="bg-blue-600 text-white text-xs font-black uppercase px-6 py-3 rounded-xl shadow-lg">Find a League</button></div>)}
     </div>
   );
+};
+
+const ProfilePage = ({ user, onLogout }) => {
+    const [activeTab, setActiveTab] = useState("INFO");
+    const [editMode, setEditMode] = useState(false);
+    const [formData, setFormData] = useState({ email: user?.email || "", gender: user?.gender || "", dob: user?.dob || "", play_location: user?.play_location || "" });
+    const [history, setHistory] = useState([]);
+    useEffect(() => { if(user?.team_id) { fetch(`http://127.0.0.1:8000/user/${user.team_id}/history`).then(res => res.json()).then(data => setHistory(data)); } }, [user]);
+    const handleSave = async () => { const res = await fetch('http://127.0.0.1:8000/user/update-profile', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, email: formData.email, gender: formData.gender, dob: formData.dob, play_location: formData.play_location }) }); if(res.ok) { alert("Profile Updated!"); setEditMode(false); window.location.reload(); } };
+    const handleAddMoney = async () => { const amount = prompt("Enter amount to add (Simulated Razorpay):", "500"); if(!amount) return; const res = await fetch('http://127.0.0.1:8000/admin/add-wallet', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) }) }); if(res.ok) { alert(`₹${amount} added successfully! (Simulated)`); window.location.reload(); } };
+    return (
+        <div className="pb-24 bg-white min-h-screen font-sans"><div className="bg-blue-600 text-white p-8 pt-12 rounded-b-[40px] shadow-lg mb-8"><div className="flex items-center gap-4 mb-6"><div className="w-16 h-16 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-2xl shadow-inner">{user?.name?.charAt(0) || "P"}</div><div><h1 className="text-2xl font-bold">{user?.name || "Player"}</h1><p className="text-xs opacity-80">Team ID: {user?.team_id}</p><p className="text-xs font-bold bg-blue-700 px-2 py-1 rounded inline-block mt-1">₹{user?.wallet_balance}</p></div></div><div className="flex bg-blue-700 p-1 rounded-xl">{['INFO', 'WALLET', 'HISTORY'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === tab ? 'bg-white text-blue-600 shadow' : 'text-blue-200'}`}>{tab}</button>))}</div></div><div className="p-6">{activeTab === "INFO" && (<div className="space-y-4"><h3 className="font-black text-lg text-gray-800 flex items-center gap-2"><User size={20}/> Personal Information</h3><div className="grid gap-3"><div><label className="text-[10px] font-bold text-gray-400 uppercase">Email</label><input disabled={!editMode} value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Gender</label><select disabled={!editMode} value={formData.gender} onChange={e=>setFormData({...formData, gender: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Date of Birth</label><input type="date" disabled={!editMode} value={formData.dob} onChange={e=>setFormData({...formData, dob: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Where do you play?</label><input disabled={!editMode} value={formData.play_location} onChange={e=>setFormData({...formData, play_location: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div></div>{editMode ? (<button onClick={handleSave} className="w-full bg-green-600 text-white p-4 rounded-xl font-black uppercase flex items-center justify-center gap-2 shadow-lg"><Save size={18}/> Save Changes</button>) : (<button onClick={() => setEditMode(true)} className="w-full bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg">Edit Profile</button>)}</div>)}{activeTab === "WALLET" && (<div className="text-center"><Wallet size={48} className="mx-auto text-blue-200 mb-4"/><h2 className="text-4xl font-black text-gray-800 mb-2">₹{user?.wallet_balance}</h2><p className="text-xs font-bold text-gray-400 uppercase mb-8">Current Balance</p><button onClick={handleAddMoney} className="w-full bg-black text-white p-4 rounded-xl font-black uppercase shadow-lg mb-4">Add Money +</button><p className="text-[10px] text-gray-400">Secured by Razorpay</p></div>)}{activeTab === "HISTORY" && (<div><h3 className="font-black text-lg text-gray-800 flex items-center gap-2 mb-4"><FileText size={20}/> Match History</h3>{history.length > 0 ? (<div className="space-y-2">{history.map(m => (<div key={m.id} className="bg-gray-50 p-4 rounded-xl flex justify-between items-center border border-gray-100"><div><p className="text-[10px] font-bold text-gray-400 uppercase">{m.date}</p><p className="font-black text-sm">{m.t1} vs {m.t2}</p></div><div className="text-right"><p className="font-black text-lg text-blue-600">{m.score || "-"}</p><p className="text-[9px] font-bold text-gray-400 uppercase">{m.status}</p></div></div>))}</div>) : (<p className="text-center text-gray-400 text-xs font-bold mt-10">No matches played yet.</p>)}</div>)}<div className="mt-12 pt-12 border-t border-gray-100"><button onClick={onLogout} className="w-full bg-red-50 text-red-500 p-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-all"><LogOut size={16}/> Log Out</button></div></div></div>
+    );
 };
 
 function AppContent() {

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import json
 import random
 
+# Create Tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -72,10 +73,10 @@ class OTPRequest(BaseModel): phone: str
 class RegisterRequest(BaseModel): phone: str; name: str; password: str
 class LoginRequest(BaseModel): team_id: str; password: str
 class WalletUpdate(BaseModel): team_id: str; amount: int
-# Updated Join Request to include partner and payment mode
+# Updated Join Request to include payment_scope
 class JoinRequest(BaseModel): 
     phone: str; tournament_name: str; city: str; sport: str; level: str; 
-    partner_team_id: str = ""; payment_mode: str = "WALLET" 
+    partner_team_id: str = ""; payment_mode: str = "WALLET"; payment_scope: str = "INDIVIDUAL"
 
 class TournamentCreate(BaseModel): name: str; city: str; sport: str; format: str; type: str; status: str = "Open"; settings: list; draw_size: int = 16; venue: str = ""; schedule: list = []
 class TournamentUpdate(BaseModel): id: int; name: str; city: str; sport: str; format: str; status: str; settings: list; draw_size: int; venue: str; schedule: list
@@ -125,28 +126,24 @@ def get_user_details(team_id: str, db: Session = Depends(get_db)):
         "registrations": reg_data
     }
 
-# --- NEW: GET PENDING REQUESTS FOR HOME PAGE ---
 @app.get("/user/{team_id}/pending")
 def get_pending_requests(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: return []
-    # Find registrations where this user is the "User" but status is "Pending_Payment"
     pending = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Pending_Payment").all()
     
     results = []
     for p in pending:
-        # Find partner's name
         partner = db.query(models.User).filter(models.User.id == p.partner_id).first()
-        partner_name = partner.name if partner else "Unknown"
+        partner_name = f"{partner.name} ({partner.team_id})" if partner else "Unknown"
         
-        # Calculate fee share
         tourney = db.query(models.Tournament).filter(models.Tournament.name == p.tournament_name, models.Tournament.city == p.city).first()
         fee = 0
         if tourney:
             cats = json.loads(tourney.settings)
             for c in cats:
                 if c['name'] == p.category: 
-                    fee = safe_int(c.get('fee')) // 2 # Double events split fee
+                    fee = safe_int(c.get('fee')) # Fee is per person now
                     break
         
         results.append({
@@ -174,7 +171,6 @@ def update_user_profile(data: UserProfileUpdate, db: Session = Depends(get_db)):
 def get_user_history(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: return []
-    # Search for user name in matches (Checking if name is part of T1 or T2 strings for doubles)
     matches = db.query(models.Match).filter(models.Match.t1.contains(user.name) | models.Match.t2.contains(user.name)).all()
     return matches
 
@@ -182,7 +178,7 @@ def get_user_history(team_id: str, db: Session = Depends(get_db)):
 def get_all_players(db: Session = Depends(get_db)): 
     return db.query(models.User).all()
 
-# --- UPDATED: GET TOURNAMENT PLAYERS (Groups Singles and Doubles) ---
+# --- UPDATED: GET TOURNAMENT PLAYERS (Show Team IDs) ---
 @app.get("/admin/tournament-players")
 def get_tournament_players(name: str, city: str, db: Session = Depends(get_db)):
     results = db.query(models.Registration).filter(
@@ -192,20 +188,19 @@ def get_tournament_players(name: str, city: str, db: Session = Depends(get_db)):
     ).all()
     
     players = []
-    processed_ids = [] # To avoid duplicates in doubles
+    processed_ids = []
 
     for reg in results:
         if reg.id in processed_ids: continue
 
         user = db.query(models.User).filter(models.User.id == reg.user_id).first()
-        display_name = user.name
+        # Show Name AND Team ID
+        display_name = f"{user.name} ({user.team_id})"
         
-        # If Doubles, find partner and combine names
         if reg.partner_id:
             partner = db.query(models.User).filter(models.User.id == reg.partner_id).first()
             if partner:
-                display_name = f"{user.name} & {partner.name}"
-                # Find partner's reg to skip it next loop
+                display_name = f"{user.name} ({user.team_id}) & {partner.name} ({partner.team_id})"
                 partner_reg = db.query(models.Registration).filter(
                     models.Registration.user_id == partner.id, 
                     models.Registration.tournament_name == name,
@@ -249,7 +244,7 @@ def admin_manual_register(data: AdminAddPlayer, db: Session = Depends(get_db)):
     db.add(new_reg); db.commit()
     return {"message": "User Registered", "group": group}
 
-# --- COMPLEX: JOIN TOURNAMENT WITH DOUBLES LOGIC ---
+# --- UPDATED: JOIN TOURNAMENT WITH TEAM PAY LOGIC ---
 @app.post("/join-tournament")
 def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.phone == data.phone).first()
@@ -258,19 +253,21 @@ def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     tourney = db.query(models.Tournament).filter(models.Tournament.name == data.tournament_name, models.Tournament.city == data.city).first()
     if not tourney: raise HTTPException(status_code=404, detail="Tournament not found")
 
-    # Check Existing Registration
     existing = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.tournament_name == data.tournament_name, models.Registration.city == data.city).first()
     if existing: raise HTTPException(status_code=400, detail=f"Already registered (Status: {existing.status})")
 
-    # Determine Fee
+    # Fee is PER PERSON
     categories = json.loads(tourney.settings)
-    full_fee = 0
+    per_person_fee = 0
     for cat in categories:
-        if cat['name'] == data.level: full_fee = safe_int(cat.get('fee')); break
+        if cat['name'] == data.level: per_person_fee = safe_int(cat.get('fee')); break
     
-    # Logic Split: Singles vs Doubles
     is_doubles = tourney.format == "Doubles"
-    pay_amount = full_fee // 2 if is_doubles else full_fee
+    pay_amount = per_person_fee
+    
+    # If paying for team, double the cost
+    if is_doubles and data.payment_scope == "TEAM":
+        pay_amount = per_person_fee * 2
 
     # Validate Partner for Doubles
     partner = None
@@ -280,30 +277,36 @@ def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
         if not partner: raise HTTPException(status_code=404, detail="Partner ID not found")
         if partner.id == user.id: raise HTTPException(status_code=400, detail="Cannot partner with yourself")
         
-        # Check Partner Registration
         p_exist = db.query(models.Registration).filter(models.Registration.user_id == partner.id, models.Registration.tournament_name == data.tournament_name, models.Registration.city == data.city).first()
         if p_exist: raise HTTPException(status_code=400, detail="Partner already registered/pending for this event")
 
-    # Payment Processing
+    # Payment
     if data.payment_mode == "WALLET":
         if user.wallet_balance < pay_amount: raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
         user.wallet_balance -= pay_amount
     else:
-        # Razorpay Simulation (Assume success if they reached here)
-        pass
+        pass # Razorpay Logic
 
-    # Create Registrations
+    # Registration Logic
     if is_doubles:
-        # 1. Create PARTIAL registration for User A (Confirmed Payment, but waiting for partner)
-        reg_a = models.Registration(user_id=user.id, partner_id=partner.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=None, status="Partial_Confirmed")
-        
-        # 2. Create PENDING registration for Partner (User B)
-        reg_b = models.Registration(user_id=partner.id, partner_id=user.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=None, status="Pending_Payment")
-        
-        db.add(reg_a); db.add(reg_b); db.commit()
-        return {"status": "pending_partner", "message": "Registered! Partner must accept and pay.", "user": {"id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance}}
+        if data.payment_scope == "TEAM":
+             # Pay Full Team: Both Confirmed Instantly
+             group, status = get_next_group(db, data.tournament_name, data.city, data.level, tourney.draw_size)
+             if status == "FULL": raise HTTPException(status_code=400, detail="Tournament Full")
+             
+             reg_a = models.Registration(user_id=user.id, partner_id=partner.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=group, status="Confirmed")
+             reg_b = models.Registration(user_id=partner.id, partner_id=user.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=group, status="Confirmed")
+             db.add(reg_a); db.add(reg_b); db.commit()
+             return {"status": "joined", "message": "Team Registered!", "user": {"id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance}}
+             
+        else:
+             # Pay Share: Partial
+             reg_a = models.Registration(user_id=user.id, partner_id=partner.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=None, status="Partial_Confirmed")
+             reg_b = models.Registration(user_id=partner.id, partner_id=user.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=None, status="Pending_Payment")
+             db.add(reg_a); db.add(reg_b); db.commit()
+             return {"status": "pending_partner", "message": "Registered! Partner must accept and pay.", "user": {"id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance}}
     else:
-        # Singles: Direct Confirm
+        # Singles
         group, status = get_next_group(db, data.tournament_name, data.city, data.level, tourney.draw_size)
         if status == "FULL": raise HTTPException(status_code=400, detail="Tournament Full")
         
@@ -314,37 +317,26 @@ def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
         reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
         return {"status": "joined", "user": {"id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance}, "registrations": reg_data}
 
-# --- NEW: PARTNER PAYS & CONFIRMS ---
 @app.post("/confirm-partner")
 def confirm_partner_registration(data: ConfirmPartnerRequest, db: Session = Depends(get_db)):
-    # Find the pending registration for the partner
     reg_b = db.query(models.Registration).filter(models.Registration.id == data.reg_id).first()
     if not reg_b or reg_b.status != "Pending_Payment": raise HTTPException(status_code=400, detail="Invalid Request")
     
-    # Find User B (The one paying now)
     user_b = db.query(models.User).filter(models.User.id == reg_b.user_id).first()
-    
-    # Find User A's registration (Partial)
     reg_a = db.query(models.Registration).filter(models.Registration.user_id == reg_b.partner_id, models.Registration.tournament_name == reg_b.tournament_name, models.Registration.status == "Partial_Confirmed").first()
     if not reg_a: raise HTTPException(status_code=400, detail="Main registration not found")
 
-    # Get Fee
     tourney = db.query(models.Tournament).filter(models.Tournament.name == reg_b.tournament_name, models.Tournament.city == reg_b.city).first()
     categories = json.loads(tourney.settings)
-    full_fee = 0
+    pay_amount = 0
     for cat in categories:
-        if cat['name'] == reg_b.category: full_fee = safe_int(cat.get('fee')); break
-    pay_amount = full_fee // 2
+        if cat['name'] == reg_b.category: pay_amount = safe_int(cat.get('fee')); break # Per Person Fee
 
-    # Payment
     if data.payment_mode == "WALLET":
         if user_b.wallet_balance < pay_amount: raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
         user_b.wallet_balance -= pay_amount
     
-    # Assign Group
     group, status = get_next_group(db, reg_b.tournament_name, reg_b.city, reg_b.category, tourney.draw_size)
-    
-    # Update Statuses to Confirmed
     reg_a.status = "Confirmed"; reg_a.group_id = group
     reg_b.status = "Confirmed"; reg_b.group_id = group
     
@@ -353,7 +345,6 @@ def confirm_partner_registration(data: ConfirmPartnerRequest, db: Session = Depe
 
 @app.get("/standings")
 def get_standings(tournament: str, city: str, level: str = None, db: Session = Depends(get_db)):
-    # Only get Confirmed registrations
     query = db.query(models.Registration).filter(
         models.Registration.tournament_name == tournament,
         models.Registration.city == city,
@@ -369,27 +360,21 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
 
     for reg in results:
         if reg.id in processed_ids: continue
-        
         user = db.query(models.User).filter(models.User.id == reg.user_id).first()
-        display_name = user.name
+        display_name = f"{user.name} ({user.team_id})"
         
-        # Handle Doubles Display Name
         if reg.partner_id:
              partner = db.query(models.User).filter(models.User.id == reg.partner_id).first()
              if partner:
-                 display_name = f"{user.name} & {partner.name}"
+                 display_name = f"{user.name} ({user.team_id}) & {partner.name} ({partner.team_id})"
                  partner_reg = db.query(models.Registration).filter(models.Registration.user_id == partner.id, models.Registration.tournament_name == tournament).first()
                  if partner_reg: processed_ids.append(partner_reg.id)
 
         points, played, won = 0, 0, 0
         total_game_points = 0
-        
-        # Match logic needs to handle partial name matches for doubles
         for m in matches:
-            # Check if either user name (or partner name) is in T1 or T2 string
             is_in_t1 = user.name in m.t1
             is_in_t2 = user.name in m.t2
-            
             if is_in_t1 or is_in_t2:
                 played += 1
                 if m.score:
@@ -402,28 +387,20 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
                                 if is_in_t1: total_game_points += s1
                                 elif is_in_t2: total_game_points += s2
                     except: pass
-                
-                # Winner Logic (String comparison of team names)
                 winner_name = calculate_winner(m.score, m.t1, m.t2)
                 if winner_name and user.name in winner_name: 
                     points += 3
                     won += 1
                     
         standings.append({
-            "name": display_name, 
-            "team_id": user.team_id, 
-            "group": reg.group_id or "A", 
-            "points": points, 
-            "gamesWon": won, 
-            "played": played,
-            "totalGamePoints": total_game_points
+            "name": display_name, "team_id": user.team_id, "group": reg.group_id or "A", 
+            "points": points, "gamesWon": won, "played": played, "totalGamePoints": total_game_points
         })
         processed_ids.append(reg.id)
 
     standings.sort(key=lambda x: x['points'], reverse=True)
     return standings
 
-# --- NEW: ADMIN LEADERBOARD REUSE ---
 @app.get("/admin/leaderboard")
 def admin_leaderboard(tournament: str, city: str, level: str, db: Session = Depends(get_db)):
     return get_standings(tournament, city, level, db)
