@@ -15,7 +15,13 @@ const Dashboard = () => {
   const [players, setPlayers] = useState([]);
   const [tournamentPlayers, setTournamentPlayers] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]); 
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState([]); // All transactions (Accounts Tab)
+  
+  // PLAYER HISTORY MODAL STATES
+  const [playerHistory, setPlayerHistory] = useState([]);
+  const [viewingPlayer, setViewingPlayer] = useState(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   const [walletTeamId, setWalletTeamId] = useState("");
   const [walletAmount, setWalletAmount] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -83,6 +89,19 @@ const Dashboard = () => {
       } catch(e) {}
   };
 
+  // --- NEW: FETCH SINGLE PLAYER HISTORY ---
+  const handleViewHistory = async (player) => {
+      setViewingPlayer(player);
+      setIsHistoryOpen(true);
+      setPlayerHistory([]); // Clear previous
+      try {
+          const res = await fetch(`${API_URL}/user/${player.team_id}/transactions`);
+          if (res.ok) {
+              setPlayerHistory(await res.json());
+          }
+      } catch(e) { console.error(e); }
+  };
+
   useEffect(() => { 
       if(isAuthenticated) { 
           if (activeTab === "PLAYERS") fetchPlayers(); 
@@ -141,10 +160,47 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex flex-col md:flex-row relative">
       
-      {/* --- MODAL --- */}
+      {/* --- HISTORY MODAL (NEW) --- */}
+      {isHistoryOpen && viewingPlayer && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+                  <div className="bg-blue-600 p-4 flex justify-between items-center text-white">
+                      <div>
+                          <h3 className="font-bold text-lg">{viewingPlayer.name}</h3>
+                          <p className="text-xs opacity-80">{viewingPlayer.team_id} • Transaction History</p>
+                      </div>
+                      <button onClick={() => setIsHistoryOpen(false)}><X size={20}/></button>
+                  </div>
+                  <div className="p-4 overflow-y-auto">
+                      {playerHistory.length > 0 ? (
+                          <div className="space-y-2">
+                              {playerHistory.map(t => (
+                                  <div key={t.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                      <div>
+                                          <p className="font-bold text-gray-800 text-xs">{t.description}</p>
+                                          <p className="text-[10px] text-gray-400 uppercase">{new Date(t.date).toLocaleDateString()}</p>
+                                      </div>
+                                      <div className="text-right">
+                                          <p className={`font-black text-sm ${t.type === "CREDIT" ? "text-green-600" : "text-red-500"}`}>
+                                              {t.type === "CREDIT" ? "+" : "-"}₹{t.amount}
+                                          </p>
+                                          <span className="text-[9px] text-gray-400 bg-white border border-gray-200 px-1 rounded">{t.mode}</span>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      ) : (
+                          <div className="p-8 text-center text-gray-400 text-sm">No transactions found.</div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- EVENT MODAL --- */}
       {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
       <div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">Sport</label><select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Padel">Padel</option><option value="Pickleball">Pickleball</option><option value="Tennis">Tennis</option><option value="Badminton">Badminton</option><option value="Box Cricket">Box Cricket</option><option value="Football">Football</option></select></div></div>
-      <div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value={8}>8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div></div>
+      <div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="8">8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div></div>
       <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div>
       <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Venue Information</label><textarea value={eventVenue} onChange={e => setEventVenue(e.target.value)} placeholder="Enter full address, landmarks, or google maps link..." className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200 text-sm h-20 resize-none"/></div><div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Categories, Fees & Prizes</label><div className="space-y-2">{categories.map((cat, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Name" value={cat.name} onChange={e => updateCategory(idx, 'name', e.target.value)} className="w-40 p-2 bg-gray-50 rounded border text-xs font-bold"/><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Fee</span><input type="number" value={cat.fee} onChange={e => updateCategory(idx, 'fee', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">1st</span><input type="number" value={cat.p1} onChange={e => updateCategory(idx, 'p1', e.target.value)} className="w-24 p-2 bg-green-50 rounded border border-green-200 text-xs font-bold text-green-700"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">2nd</span><input type="number" value={cat.p2} onChange={e => updateCategory(idx, 'p2', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">3rd</span><input type="number" value={cat.p3} onChange={e => updateCategory(idx, 'p3', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><button onClick={() => removeCategory(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded mt-3"><Trash2 size={16}/></button></div>))}</div><button onClick={addCategoryRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1"><Plus size={14}/> Add Category</button></div><button onClick={handleModalSubmit} className="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">{editingId ? "Save Changes" : "Create Event"}</button></div></div></div>)}
 
@@ -155,7 +211,6 @@ const Dashboard = () => {
             <button onClick={() => {setActiveTab("TOURNAMENTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "TOURNAMENTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Events</button>
             <button onClick={() => {setActiveTab("PLAYERS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "PLAYERS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Players & Wallet</button>
             <button onClick={() => {setActiveTab("ACCOUNTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "ACCOUNTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Accounts</button>
-            
             <div className="px-4 py-2 text-xs font-bold text-gray-400 uppercase mt-4">Active Events</div>
             {tournaments.map(t => ( <button key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className={`w-full text-left px-4 py-2 rounded-lg font-medium text-sm ${selectedTournament?.id === t.id ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{t.name}</button> ))}
             <button onClick={openCreateModal} className="w-full mt-4 border border-dashed border-gray-300 p-2 rounded-lg text-xs font-bold text-gray-400 hover:text-blue-600 hover:border-blue-600">+ Create New Event</button>
@@ -179,7 +234,6 @@ const Dashboard = () => {
                                 <div><span className="block text-[10px] font-bold uppercase text-gray-300">Draw Size</span>{t.draw_size || 16}</div>
                             </div>
                         </div>
-                        {/* BOTTOM ACTION BAR - NO OVERLAP */}
                         <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
                             <button onClick={(e) => { e.stopPropagation(); openEditModal(t); }} className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-blue-100 hover:text-blue-600"><Edit2 size={16}/></button>
                             <button onClick={(e) => { e.stopPropagation(); handleDeleteTournament(t.id); }} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 hover:text-red-700"><Trash2 size={16}/></button>
@@ -195,13 +249,7 @@ const Dashboard = () => {
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold">
-                    <tr>
-                      <th className="p-4">Date</th>
-                      <th className="p-4">Player</th>
-                      <th className="p-4">Description</th>
-                      <th className="p-4 text-right">Added (Credit)</th>
-                      <th className="p-4 text-right">Withdrawn (Debit)</th>
-                    </tr>
+                    <tr><th className="p-4">Date</th><th className="p-4">Player</th><th className="p-4">Description</th><th className="p-4 text-right">Added (Credit)</th><th className="p-4 text-right">Withdrawn (Debit)</th></tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {transactions.map(t => (
@@ -221,7 +269,12 @@ const Dashboard = () => {
         )}
 
         {activeTab === "PLAYERS" && (
-            <div><h2 className="text-3xl font-black text-gray-800 mb-6">Player Management</h2><div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8 max-w-xl"><h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Wallet size={18}/> Quick Top-Up</h3><div className="flex gap-4"><input value={walletTeamId} onChange={e => setWalletTeamId(e.target.value)} placeholder="Team ID (e.g. SA99)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/2"/><input value={walletAmount} onChange={e => setWalletAmount(e.target.value)} type="number" placeholder="Amount (₹)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/3"/><button onClick={handleAddMoney} className="bg-green-600 text-white font-bold px-6 rounded-lg hover:bg-green-700">ADD</button></div></div><div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Name</th><th className="p-4">Contact & Info</th><th className="p-4">Registered On</th><th className="p-4">Team ID</th><th className="p-4">Wallet Balance</th></tr></thead><tbody className="divide-y divide-gray-50">{players.map(p => (<tr key={p.id} className="hover:bg-gray-50"><td className="p-4 font-bold text-gray-800">{p.name}</td><td className="p-4"><p className="font-bold text-gray-700">{p.phone}</p><p className="text-[10px] text-gray-400">{p.email || "No Email"}</p><p className="text-[10px] text-blue-500 uppercase font-bold mt-1">{p.gender} • {p.dob || "-"}</p></td><td className="p-4 text-xs font-bold text-gray-500">{p.registration_date ? new Date(p.registration_date).toLocaleDateString() : "-"}</td><td className="p-4"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded font-black text-xs">{p.team_id}</span></td><td className="p-4 font-black text-green-600">₹{p.wallet_balance}</td></tr>))}</tbody></table></div></div>
+            <div><h2 className="text-3xl font-black text-gray-800 mb-6">Player Management</h2><div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8 max-w-xl"><h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Wallet size={18}/> Quick Top-Up</h3><div className="flex gap-4"><input value={walletTeamId} onChange={e => setWalletTeamId(e.target.value)} placeholder="Team ID (e.g. SA99)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/2"/><input value={walletAmount} onChange={e => setWalletAmount(e.target.value)} type="number" placeholder="Amount (₹)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/3"/><button onClick={handleAddMoney} className="bg-green-600 text-white font-bold px-6 rounded-lg hover:bg-green-700">ADD</button></div></div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold">
+                <tr><th className="p-4">Name</th><th className="p-4">Contact & Info</th><th className="p-4">Registered On</th><th className="p-4">Team ID</th><th className="p-4">Wallet Balance</th><th className="p-4 text-right">History</th></tr></thead><tbody className="divide-y divide-gray-50">
+                    {players.map(p => (<tr key={p.id} className="hover:bg-gray-50"><td className="p-4 font-bold text-gray-800">{p.name}</td><td className="p-4"><p className="font-bold text-gray-700">{p.phone}</p><p className="text-[10px] text-gray-400">{p.email || "No Email"}</p><p className="text-[10px] text-blue-500 uppercase font-bold mt-1">{p.gender} • {p.dob || "-"}</p></td><td className="p-4 text-xs font-bold text-gray-500">{p.registration_date ? new Date(p.registration_date).toLocaleDateString() : "-"}</td><td className="p-4"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded font-black text-xs">{p.team_id}</span></td><td className="p-4 font-black text-green-600">₹{p.wallet_balance}</td>
+                    <td className="p-4 text-right"><button onClick={() => handleViewHistory(p)} className="bg-gray-100 text-gray-600 p-2 rounded-lg hover:bg-gray-200"><FileText size={16}/></button></td>
+                    </tr>))}</tbody></table></div></div>
         )}
 
         {activeTab === "MANAGE" && selectedTournament && (
