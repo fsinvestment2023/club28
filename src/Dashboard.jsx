@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter } from 'lucide-react';
 
 const Dashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -10,6 +10,9 @@ const Dashboard = () => {
   
   // VIEW MODE STATE (MATCHES vs LEADERBOARD)
   const [viewMode, setViewMode] = useState("MATCHES");
+  
+  // NEW: LEADERBOARD GROUP FILTER
+  const [leaderboardGroup, setLeaderboardGroup] = useState("ALL");
 
   const [tournaments, setTournaments] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -52,7 +55,6 @@ const Dashboard = () => {
       try { 
           const res = await fetch(`${API_URL}/scores`); 
           const data = await res.json(); 
-          // Filter by Name AND City locally
           const filtered = selectedTournament ? data.filter(m => m.category === selectedTournament.name && m.city === selectedTournament.city) : data; 
           setMatches(filtered.sort((a,b) => a.id - b.id)); 
       } catch(e) {} 
@@ -63,16 +65,13 @@ const Dashboard = () => {
   const fetchTournamentPlayers = async () => { 
       if(!selectedTournament) return; 
       try { 
-          // Fetch players specific to this Tournament Name AND City
           const res = await fetch(`${API_URL}/admin/tournament-players?name=${selectedTournament.name}&city=${selectedTournament.city}`); 
           setTournamentPlayers(await res.json()); 
       } catch(e){} 
   };
 
   const fetchLeaderboard = async () => {
-      // Ensure we have a level selected, otherwise try to pick the first one
       let levelToFetch = activeLevelTab;
-      
       if (!levelToFetch && selectedTournament) {
           try {
               const cats = JSON.parse(selectedTournament.settings || "[]");
@@ -82,16 +81,13 @@ const Dashboard = () => {
               }
           } catch(e) {}
       }
-
       if(!selectedTournament || !levelToFetch) return;
-      
       try {
           const res = await fetch(`${API_URL}/admin/leaderboard?tournament=${selectedTournament.name}&city=${selectedTournament.city}&level=${levelToFetch}`);
           setLeaderboard(await res.json());
       } catch(e) {}
   };
 
-  // MAIN DATA REFRESHER
   useEffect(() => { 
       if(isAuthenticated) { 
           if (activeTab === "PLAYERS") fetchPlayers(); 
@@ -105,7 +101,6 @@ const Dashboard = () => {
       } 
   }, [selectedTournament, isAuthenticated, activeTab, viewMode, activeLevelTab]); 
 
-  // Initial Category Setter when opening a tournament
   useEffect(() => {
       if (selectedTournament && !activeLevelTab) {
           try {
@@ -117,6 +112,9 @@ const Dashboard = () => {
 
   const filteredPlayers = tournamentPlayers.filter(p => p.active_level === activeLevelTab);
   
+  // FILTER LEADERBOARD BY GROUP
+  const filteredLeaderboard = leaderboard.filter(p => leaderboardGroup === "ALL" || p.group === leaderboardGroup);
+
   const handleAddMoney = async () => { if (!walletTeamId || !walletAmount) return alert("Fill fields"); const res = await fetch(`${API_URL}/admin/add-wallet`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: walletTeamId, amount: parseInt(walletAmount) }) }); if (res.ok) { alert("Money Added!"); setWalletTeamId(""); setWalletAmount(""); fetchPlayers(); } else { alert("Player Not Found"); } };
   
   const handleDeleteTournament = async (id) => { if(!window.confirm("Delete this event?")) return; await fetch(`${API_URL}/admin/delete-tournament`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchTournaments(); if(selectedTournament?.id === id) setSelectedTournament(null); };
@@ -175,7 +173,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex flex-col md:flex-row relative">
       
-      {/* --- MODAL (Creating New Event) --- */}
+      {/* --- MODAL --- */}
       {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
       
       <div className="grid grid-cols-3 gap-4">
@@ -196,27 +194,10 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-2 gap-4">
         <div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div>
-        <div>
-            <label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label>
-            <select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200">
-                <option value={8}>8 Players (2 Grps)</option>
-                <option value={12}>12 Players (3 Grps)</option>
-                <option value={16}>16 Players (4 Grps)</option>
-            </select>
-        </div>
+        <div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value={8}>8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div>
       </div>
       
-      <div>
-        <label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label>
-        <div className="space-y-2">
-            {eventSchedule.map((row, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                    <input placeholder="Row Label (e.g. Week 1)" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value (e.g. Mon, Wed, Fri)" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button>
-                </div>
-            ))}
-        </div>
-        <button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button>
-      </div>
+      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label (e.g. Week 1)" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value (e.g. Mon, Wed, Fri)" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div>
 
       <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Venue Information</label><textarea value={eventVenue} onChange={e => setEventVenue(e.target.value)} placeholder="Enter full address, landmarks, or google maps link..." className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200 text-sm h-20 resize-none"/></div><div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Categories, Fees & Prizes</label><div className="space-y-2">{categories.map((cat, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Name" value={cat.name} onChange={e => updateCategory(idx, 'name', e.target.value)} className="w-40 p-2 bg-gray-50 rounded border text-xs font-bold"/><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Fee</span><input type="number" value={cat.fee} onChange={e => updateCategory(idx, 'fee', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">1st</span><input type="number" value={cat.p1} onChange={e => updateCategory(idx, 'p1', e.target.value)} className="w-24 p-2 bg-green-50 rounded border border-green-200 text-xs font-bold text-green-700"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">2nd</span><input type="number" value={cat.p2} onChange={e => updateCategory(idx, 'p2', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">3rd</span><input type="number" value={cat.p3} onChange={e => updateCategory(idx, 'p3', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><button onClick={() => removeCategory(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded mt-3"><Trash2 size={16}/></button></div>))}</div><button onClick={addCategoryRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1"><Plus size={14}/> Add Category</button></div><button onClick={handleModalSubmit} className="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">{editingId ? "Save Changes" : "Create Event"}</button></div></div></div>)}
 
@@ -276,7 +257,6 @@ const Dashboard = () => {
                         })()}
                     </div>
                     
-                    {/* VIEW TOGGLE */}
                     <div className="flex bg-gray-100 p-1 rounded-lg mb-1">
                         <button onClick={() => setViewMode("MATCHES")} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${viewMode === "MATCHES" ? "bg-white shadow text-blue-600" : "text-gray-500"}`}>
                             <List size={14}/> Matches
@@ -288,7 +268,6 @@ const Dashboard = () => {
                 </div>
 
                 {viewMode === "MATCHES" ? (
-                    /* --- ORIGINAL LAYOUT: LEFT (PLAYERS) | RIGHT (MATCHES) --- */
                     <div className="grid grid-cols-12 gap-8">
                         <div className="col-span-5">
                             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-4">
@@ -299,7 +278,6 @@ const Dashboard = () => {
                                     <button onClick={handleManualRegister} className="flex-1 bg-black text-white text-xs font-bold rounded">ADD</button>
                                 </div>
                             </div>
-
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                                 <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 text-sm flex justify-between items-center">
                                     <span>Teams ({filteredPlayers.length})</span>
@@ -307,19 +285,7 @@ const Dashboard = () => {
                                 </div>
                                 <table className="w-full text-left text-sm">
                                     <thead className="bg-white text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-3">Name</th><th className="p-3">Grp</th><th className="p-3">ID</th></tr></thead>
-                                    <tbody className="divide-y divide-gray-50">
-                                        {filteredPlayers.length > 0 ? (
-                                            filteredPlayers.map(p => (
-                                                <tr key={p.id}>
-                                                    <td className="p-3 font-bold text-gray-800">{p.name}</td>
-                                                    <td className="p-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">{p.group_id || "-"}</span></td>
-                                                    <td className="p-3 font-mono text-gray-400 text-xs">{p.team_id}</td>
-                                                </tr>
-                                            ))
-                                        ) : (
-                                            <tr><td colSpan="3" className="p-4 text-center text-gray-400 text-xs">No players in {activeLevelTab}.</td></tr>
-                                        )}
-                                    </tbody>
+                                    <tbody className="divide-y divide-gray-50">{filteredPlayers.length > 0 ? (filteredPlayers.map(p => (<tr key={p.id}><td className="p-3 font-bold text-gray-800">{p.name}</td><td className="p-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">{p.group_id || "-"}</span></td><td className="p-3 font-mono text-gray-400 text-xs">{p.team_id}</td></tr>))) : (<tr><td colSpan="3" className="p-4 text-center text-gray-400 text-xs">No players in {activeLevelTab}.</td></tr>)}</tbody>
                                 </table>
                             </div>
                         </div>
@@ -337,24 +303,10 @@ const Dashboard = () => {
                                     <button onClick={handleCreateMatch} className="bg-black text-white font-bold rounded-lg text-sm hover:bg-gray-800">+ Add Match</button>
                                 </div>
                             </div>
-
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                                 <table className="w-full text-left text-sm">
                                     <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Schedule</th><th className="p-4">Score</th><th className="p-4 text-right">Actions</th></tr></thead>
-                                    <tbody className="divide-y divide-gray-50">
-                                        {matches.map(m => (
-                                            <tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}>
-                                                <td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/></div></td>
-                                                <td className="p-4"><div className="flex flex-col gap-1"><input type="date" id={`date-${m.id}`} defaultValue={m.date} className="p-1 bg-transparent rounded text-xs font-bold border-none w-28"/><input type="time" id={`time-${m.id}`} defaultValue={m.time} className="p-1 bg-transparent rounded text-xs font-bold border-none w-20"/></div></td>
-                                                <td className="p-4">
-                                                    <input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-white border border-gray-200 text-center rounded font-bold p-2"/>
-                                                    {m.status === "Pending Verification" && <p className="text-[9px] text-orange-500 font-bold mt-1">PENDING</p>}
-                                                    {m.status === "Official" && <p className="text-[9px] text-green-500 font-bold mt-1">OFFICIAL</p>}
-                                                </td>
-                                                <td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
+                                    <tbody className="divide-y divide-gray-50">{matches.map(m => (<tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/></div></td><td className="p-4"><div className="flex flex-col gap-1"><input type="date" id={`date-${m.id}`} defaultValue={m.date} className="p-1 bg-transparent rounded text-xs font-bold border-none w-28"/><input type="time" id={`time-${m.id}`} defaultValue={m.time} className="p-1 bg-transparent rounded text-xs font-bold border-none w-20"/></div></td><td className="p-4"><input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-white border border-gray-200 text-center rounded font-bold p-2"/>{m.status === "Pending Verification" && <p className="text-[9px] text-orange-500 font-bold mt-1">PENDING</p>}{m.status === "Official" && <p className="text-[9px] text-green-500 font-bold mt-1">OFFICIAL</p>}</td><td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody>
                                 </table>
                             </div>
                         </div>
@@ -362,15 +314,30 @@ const Dashboard = () => {
                 ) : (
                     /* --- LEADERBOARD VIEW --- */
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="bg-blue-50 px-6 py-4 border-b border-blue-100 font-bold text-blue-800 text-sm flex items-center gap-2">
-                            <Trophy size={18}/> Live Leaderboard ({activeLevelTab})
+                        <div className="bg-blue-50 px-6 py-4 border-b border-blue-100 font-bold text-blue-800 text-sm flex items-center justify-between">
+                            <div className="flex items-center gap-2"><Trophy size={18}/> Live Leaderboard ({activeLevelTab})</div>
+                            
+                            {/* --- NEW: GROUP FILTER BUTTONS --- */}
+                            <div className="flex gap-2">
+                                <span className="text-xs font-bold text-gray-400 uppercase pt-1">Filter:</span>
+                                {["ALL", "A", "B", "C", "D"].map(g => (
+                                    <button 
+                                        key={g} 
+                                        onClick={() => setLeaderboardGroup(g)} 
+                                        className={`px-3 py-1 rounded-md text-[10px] font-bold ${leaderboardGroup === g ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 border border-gray-200'}`}
+                                    >
+                                        {g === "ALL" ? "All Groups" : `Group ${g}`}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                         <table className="w-full text-left text-sm">
                             <thead className="bg-white text-gray-400 border-b border-gray-100 text-xs uppercase font-bold">
                                 <tr><th className="p-4">Rank</th><th className="p-4">Team</th><th className="p-4 text-center">Played</th><th className="p-4 text-center">Won</th><th className="p-4 text-center">Games (Score)</th><th className="p-4 text-center">Points</th></tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {leaderboard.map((team, i) => (
+                                {filteredLeaderboard.length > 0 ? (
+                                    filteredLeaderboard.map((team, i) => (
                                     <tr key={i} className={i < 2 ? "bg-green-50/50" : ""}>
                                         <td className="p-4 font-bold text-gray-400 text-xs">#{i+1}</td>
                                         <td className="p-4 font-bold text-gray-800">{team.name} <span className="text-[10px] text-gray-400">({team.team_id})</span> <span className="bg-gray-100 px-2 py-0.5 rounded text-[10px] ml-2">Grp {team.group}</span></td>
@@ -379,7 +346,10 @@ const Dashboard = () => {
                                         <td className="p-4 text-center font-bold text-gray-600">{team.totalGamePoints}</td>
                                         <td className="p-4 text-center font-black text-blue-600 text-lg">{team.points}</td>
                                     </tr>
-                                ))}
+                                ))
+                                ) : (
+                                    <tr><td colSpan="6" className="p-8 text-center text-gray-400 text-xs font-bold">No teams found in {leaderboardGroup === "ALL" ? "this category" : `Group ${leaderboardGroup}`}.</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
