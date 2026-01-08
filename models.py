@@ -17,7 +17,8 @@ class Registration(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     tournament_name = Column(String)
-    city = Column(String) # <--- ADDED CITY TO TRACK EVENT LOCATION
+    city = Column(String)
+    sport = Column(String)
     category = Column(String)
     group_id = Column(String)
     user = relationship("User", back_populates="registrations")
@@ -25,25 +26,31 @@ class Registration(Base):
 class Tournament(Base):
     __tablename__ = "tournaments"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String) # <--- REMOVED unique=True
-    city = Column(String, default="Mumbai") 
+    name = Column(String)
+    city = Column(String, default="Mumbai")
+    sport = Column(String, default="Padel")
     type = Column(String) 
     fee = Column(String) 
     prize = Column(String) 
     status = Column(String)
+    
+    # --- NEW COLUMNS ---
+    venue = Column(String, default="") 
+    schedule = Column(String, default="[]") # Stores JSON string of schedule rows
+    # -------------------
+
     settings = Column(String, default="[]")
     draw_size = Column(Integer, default=16)
 
-    # Allow same name if cities are different
     __table_args__ = (
-        UniqueConstraint('name', 'city', name='_name_city_uc'),
+        UniqueConstraint('name', 'city', 'sport', name='_name_city_sport_uc'),
     )
 
 class Match(Base):
     __tablename__ = "matches"
     id = Column(Integer, primary_key=True, index=True)
     category = Column(String) 
-    city = Column(String) # <--- ADDED CITY
+    city = Column(String)
     group_id = Column(String)      
     t1 = Column(String)            
     t2 = Column(String)            

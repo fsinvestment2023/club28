@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity } from 'lucide-react';
 
 const Dashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -19,11 +19,16 @@ const Dashboard = () => {
   // Create/Edit Event States
   const [editingId, setEditingId] = useState(null); 
   const [eventName, setEventName] = useState("");
-  const [eventCity, setEventCity] = useState("Mumbai"); 
+  const [eventCity, setEventCity] = useState("MUMBAI"); 
+  const [eventSport, setEventSport] = useState("Padel"); 
   const [eventType, setEventType] = useState("League");
   const [eventStatus, setEventStatus] = useState("Open");
   const [categories, setCategories] = useState([{ name: "Advance", fee: 2500, p1: 30000, p2: 15000, p3: 5000 }]);
   const [drawSize, setDrawSize] = useState(16);
+  
+  // NEW: Venue and Schedule States
+  const [eventVenue, setEventVenue] = useState("");
+  const [eventSchedule, setEventSchedule] = useState([{ label: "", value: "" }]);
 
   // Manual Register States
   const [manualName, setManualName] = useState("");
@@ -45,7 +50,6 @@ const Dashboard = () => {
       try { 
           const res = await fetch(`${API_URL}/scores`); 
           const data = await res.json(); 
-          // Filter by Name AND City
           const filtered = selectedTournament ? data.filter(m => m.category === selectedTournament.name && m.city === selectedTournament.city) : data; 
           setMatches(filtered.sort((a,b) => a.id - b.id)); 
       } catch(e) {} 
@@ -56,7 +60,6 @@ const Dashboard = () => {
   const fetchTournamentPlayers = async () => { 
       if(!selectedTournament) return; 
       try { 
-          // Updated URL to include query params
           const res = await fetch(`${API_URL}/admin/tournament-players?name=${selectedTournament.name}&city=${selectedTournament.city}`); 
           setTournamentPlayers(await res.json()); 
       } catch(e){} 
@@ -74,7 +77,6 @@ const Dashboard = () => {
       } 
   }, [selectedTournament, isAuthenticated, activeTab]);
 
-  // Handle Level Tab Selection
   useEffect(() => {
       if (selectedTournament && !activeLevelTab) {
           try {
@@ -90,15 +92,30 @@ const Dashboard = () => {
   
   const handleDeleteTournament = async (id) => { if(!window.confirm("Delete this event?")) return; await fetch(`${API_URL}/admin/delete-tournament`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchTournaments(); if(selectedTournament?.id === id) setSelectedTournament(null); };
   
-  const openCreateModal = () => { setEditingId(null); setEventName(""); setEventCity("Mumbai"); setEventType("League"); setEventStatus("Open"); setDrawSize(16); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); setIsModalOpen(true); };
+  const openCreateModal = () => { 
+      setEditingId(null); 
+      setEventName(""); 
+      setEventCity("MUMBAI"); 
+      setEventSport("Padel"); 
+      setEventType("League"); 
+      setEventStatus("Open"); 
+      setDrawSize(16); 
+      setEventVenue(""); // Reset Venue
+      setEventSchedule([{ label: "", value: "" }]); // Reset Schedule
+      setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); 
+      setIsModalOpen(true); 
+  };
   
   const openEditModal = (t) => { 
       setEditingId(t.id); 
       setEventName(t.name); 
-      setEventCity(t.city || "Mumbai"); 
+      setEventCity(t.city || "MUMBAI"); 
+      setEventSport(t.sport || "Padel"); 
       setEventType(t.type); 
       setEventStatus(t.status); 
       setDrawSize(t.draw_size || 16); 
+      setEventVenue(t.venue || ""); 
+      try { setEventSchedule(JSON.parse(t.schedule || "[]")); } catch { setEventSchedule([{ label: "", value: "" }]); }
       try { setCategories(JSON.parse(t.settings || "[]")); } catch { setCategories([{ name: "Default", fee: t.fee, p1: 0, p2: 0, p3: 0 }]); } 
       setIsModalOpen(true); 
   };
@@ -110,9 +127,12 @@ const Dashboard = () => {
           id: editingId, 
           name: eventName, 
           city: eventCity, 
+          sport: eventSport,
           type: eventType, 
           status: eventStatus, 
           settings: categories,
+          venue: eventVenue,
+          schedule: eventSchedule,
           draw_size: parseInt(drawSize) 
       }; 
       await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); 
@@ -123,6 +143,11 @@ const Dashboard = () => {
   const updateCategory = (idx, f, v) => { const n = [...categories]; n[idx][f] = v; setCategories(n); };
   const addCategoryRow = () => setCategories([...categories, { name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]);
   const removeCategory = (idx) => setCategories(categories.filter((_, i) => i !== idx));
+
+  // --- SCHEDULE FUNCTIONS ---
+  const updateSchedule = (idx, f, v) => { const n = [...eventSchedule]; n[idx][f] = v; setEventSchedule(n); };
+  const addScheduleRow = () => setEventSchedule([...eventSchedule, { label: "", value: "" }]);
+  const removeScheduleRow = (idx) => setEventSchedule(eventSchedule.filter((_, i) => i !== idx));
 
   // --- MANUAL REGISTRATION ---
   const handleManualRegister = async () => {
@@ -153,16 +178,14 @@ const Dashboard = () => {
 
   const handleCreateMatch = async () => { 
       if (!selectedTournament || !newMatchT1 || !newMatchT2) return alert("Select teams!"); 
-      
       const t1Obj = filteredPlayers.find(p => p.name === newMatchT1);
       const group = t1Obj ? t1Obj.group_id : 'A';
-
       await fetch(`${API_URL}/admin/create-match`, { 
           method: 'POST', 
           headers: {'Content-Type': 'application/json'}, 
           body: JSON.stringify({ 
               category: selectedTournament.name, 
-              city: selectedTournament.city, // Send City
+              city: selectedTournament.city,
               group_id: group, 
               t1: newMatchT1, 
               t2: newMatchT2, 
@@ -182,12 +205,22 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex flex-col md:flex-row relative">
-      {/* MODAL */}
       {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
       
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
-        <div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value)} placeholder="e.g. Mumbai" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
+        <div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
+        <div>
+            <label className="text-xs font-bold text-gray-400 uppercase">Sport</label>
+            <select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200">
+                <option value="Padel">Padel</option>
+                <option value="Pickleball">Pickleball</option>
+                <option value="Tennis">Tennis</option>
+                <option value="Badminton">Badminton</option>
+                <option value="Box Cricket">Box Cricket</option>
+                <option value="Football">Football</option>
+            </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -201,10 +234,35 @@ const Dashboard = () => {
             </select>
         </div>
       </div>
+
+      {/* NEW: SCHEDULE PREVIEW SECTION */}
+      <div>
+        <label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label>
+        <div className="space-y-2">
+            {eventSchedule.map((row, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                    <input placeholder="Row Label (e.g. Week 1)" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/>
+                    <input placeholder="Value (e.g. Mon, Wed, Fri)" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/>
+                    <button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button>
+                </div>
+            ))}
+        </div>
+        <button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button>
+      </div>
+
+      {/* NEW: VENUE INFORMATION SECTION */}
+      <div>
+        <label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Venue Information</label>
+        <textarea 
+            value={eventVenue} 
+            onChange={e => setEventVenue(e.target.value)} 
+            placeholder="Enter full address, landmarks, or google maps link..." 
+            className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200 text-sm h-20 resize-none"
+        />
+      </div>
       
       <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Categories, Fees & Prizes</label><div className="space-y-2">{categories.map((cat, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Name" value={cat.name} onChange={e => updateCategory(idx, 'name', e.target.value)} className="w-40 p-2 bg-gray-50 rounded border text-xs font-bold"/><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Fee</span><input type="number" value={cat.fee} onChange={e => updateCategory(idx, 'fee', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">1st</span><input type="number" value={cat.p1} onChange={e => updateCategory(idx, 'p1', e.target.value)} className="w-24 p-2 bg-green-50 rounded border border-green-200 text-xs font-bold text-green-700"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">2nd</span><input type="number" value={cat.p2} onChange={e => updateCategory(idx, 'p2', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">3rd</span><input type="number" value={cat.p3} onChange={e => updateCategory(idx, 'p3', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><button onClick={() => removeCategory(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded mt-3"><Trash2 size={16}/></button></div>))}</div><button onClick={addCategoryRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1"><Plus size={14}/> Add Category</button></div><button onClick={handleModalSubmit} className="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">{editingId ? "Save Changes" : "Create Event"}</button></div></div></div>)}
 
-      {/* SIDEBAR */}
       <div className="w-full md:w-64 bg-white border-r border-gray-200 p-4 flex-shrink-0">
         <h1 className="font-black text-xl text-blue-900 italic mb-6 px-2">CLUB 28 ADMIN</h1>
         <div className="space-y-1">
@@ -224,8 +282,10 @@ const Dashboard = () => {
                         <div className="absolute top-4 right-4 flex gap-2 z-10"><button onClick={(e) => { e.stopPropagation(); handleDeleteTournament(t.id); }} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 hover:text-red-700"><Trash2 size={16}/></button><button onClick={(e) => { e.stopPropagation(); openEditModal(t); }} className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-blue-100 hover:text-blue-600"><Edit2 size={16}/></button></div>
                         <div className="flex justify-between items-start mb-4"><span className="bg-blue-100 text-blue-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.type}</span></div>
                         <h3 className="font-bold text-xl text-gray-800 mb-1">{t.name}</h3>
-                        <p className="text-xs font-bold text-gray-400 flex items-center gap-1 mb-4"><MapPin size={12}/> {t.city || "Mumbai"}</p>
-                        
+                        <div className="flex items-center gap-3 text-xs font-bold text-gray-400 mb-4">
+                            <span className="flex items-center gap-1"><MapPin size={12}/> {t.city || "MUMBAI"}</span>
+                            <span className="flex items-center gap-1"><Activity size={12}/> {t.sport || "Padel"}</span>
+                        </div>
                         <div className="flex gap-4 text-sm text-gray-500 mt-4 border-t border-gray-50 pt-4">
                             <div><span className="block text-[10px] font-bold uppercase text-gray-300">Fee Starts</span>₹{t.fee}</div>
                             <div><span className="block text-[10px] font-bold uppercase text-gray-300">Draw Size</span>{t.draw_size || 16}</div>
@@ -241,7 +301,7 @@ const Dashboard = () => {
 
         {activeTab === "MANAGE" && selectedTournament && (
             <div className="max-w-6xl">
-                <div className="flex justify-between items-center mb-4"><div><button onClick={() => setActiveTab("TOURNAMENTS")} className="text-xs font-bold text-gray-400 hover:text-gray-600 mb-1">← Back to Events</button><h2 className="text-3xl font-black text-blue-900">{selectedTournament.name} ({selectedTournament.city})</h2></div><button onClick={fetchMatches} className="p-2 bg-white border rounded hover:bg-gray-50"><RefreshCw size={20}/></button></div>
+                <div className="flex justify-between items-center mb-4"><div><button onClick={() => setActiveTab("TOURNAMENTS")} className="text-xs font-bold text-gray-400 hover:text-gray-600 mb-1">← Back to Events</button><h2 className="text-3xl font-black text-blue-900">{selectedTournament.name} <span className="text-lg text-gray-400">({selectedTournament.city} • {selectedTournament.sport})</span></h2></div><button onClick={fetchMatches} className="p-2 bg-white border rounded hover:bg-gray-50"><RefreshCw size={20}/></button></div>
                 
                 <div className="flex gap-2 mb-6 border-b border-gray-200">
                     {(() => {
@@ -257,7 +317,6 @@ const Dashboard = () => {
                 </div>
 
                 <div className="grid grid-cols-12 gap-8">
-                    {/* LEFT COLUMN: Players */}
                     <div className="col-span-5">
                         <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-4">
                             <h3 className="font-bold text-gray-700 mb-2 flex items-center gap-2 text-xs uppercase"><UserPlus size={14}/> Add Player to {activeLevelTab}</h3>
@@ -292,7 +351,6 @@ const Dashboard = () => {
                         </div>
                     </div>
 
-                    {/* RIGHT COLUMN: Matches */}
                     <div className="col-span-7">
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-4">
                             <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Calendar size={18}/> Add Match ({activeLevelTab})</h3>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin } from 'lucide-react';
+import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Clock } from 'lucide-react';
 import Dashboard from './Dashboard.jsx'; 
 
 // --- SHARED COMPONENTS ---
@@ -55,9 +55,12 @@ const LoginPage = ({ onLogin }) => {
 
 const TournamentRegistration = ({ onRegister }) => {
     const navigate = useNavigate(); const { id } = useParams(); const [tournament, setTournament] = useState(null); const [categories, setCategories] = useState([]); const [selectedCat, setSelectedCat] = useState(null); const [loading, setLoading] = useState(false);
-    useEffect(() => { const loadData = async () => { const tRes = await fetch('http://127.0.0.1:8000/tournaments'); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); } }; loadData(); }, [id]);
     
-    // --- UPDATED PAYMENT FUNCTION WITH BETTER ERROR HANDLING ---
+    // NEW STATES
+    const [schedule, setSchedule] = useState([]);
+    
+    useEffect(() => { const loadData = async () => { const tRes = await fetch('http://127.0.0.1:8000/tournaments'); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); try { setSchedule(JSON.parse(found.schedule || "[]")); } catch {} } }; loadData(); }, [id]);
+    
     const handlePayment = async () => {
         setLoading(true); 
         const user = JSON.parse(localStorage.getItem("user"));
@@ -68,24 +71,19 @@ const TournamentRegistration = ({ onRegister }) => {
                 body: JSON.stringify({ 
                     phone: user.phone, 
                     tournament_name: tournament.name, 
-                    city: tournament.city, // Send City
+                    city: tournament.city, 
+                    sport: tournament.sport, 
                     level: selectedCat.name 
                 }) 
             });
-            
             const data = await response.json(); 
-
             if (!response.ok) { 
-                // Fix: Check if detail is a string or object
                 const errorMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
                 throw new Error(errorMsg || "Payment Failed"); 
             }
-            
-            // Merge new registration with user object
             const updatedUser = { ...user, wallet_balance: data.user.wallet_balance, registrations: data.registrations };
             localStorage.setItem("user", JSON.stringify(updatedUser)); 
             onRegister(updatedUser); 
-            
             alert(`Success! Joined ${tournament.name}`); 
             navigate('/');
         } catch (error) { 
@@ -98,17 +96,50 @@ const TournamentRegistration = ({ onRegister }) => {
 
     if (!tournament || !selectedCat) return <div className="p-10 text-center text-gray-500">Loading Event...</div>;
     const prizes = [ { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, { rank: '3rd', amount: selectedCat.p3, icon: '🥉' } ];
+    
     return (
-        <div className="bg-white min-h-screen pb-32"><div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg"><button onClick={() => navigate('/compete')} className="mb-6 bg-white/20 p-2 rounded-full"><ArrowLeft size={24}/></button><h1 className="text-3xl font-black italic uppercase mb-2">{tournament.name}</h1><p className="text-blue-100 font-bold text-xs uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> {tournament.city || "Mumbai"}</p></div><div className="p-6 -mt-8"><div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6"><h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3><div className="space-y-3">{categories.map((cat, idx) => (<button key={idx} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat.name === cat.name ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}><div className="text-left"><span className="font-bold text-sm block">{cat.name}</span><span className="text-[10px] font-bold opacity-70">Entry Fee: ₹{cat.fee}</span></div>{selectedCat.name === cat.name && <CheckCircle size={18}/>}</button>))}</div></div><div className="bg-blue-50 p-6 rounded-[30px] border border-blue-100 mb-24"><div className="flex items-center gap-3 mb-6"><Trophy className="text-yellow-500" size={24} fill="currentColor"/><div><span className="block font-black text-lg text-blue-900 uppercase italic">Prize Pool</span><span className="text-[10px] font-bold text-blue-400 uppercase">{selectedCat.name} Only</span></div></div><div className="space-y-3">{prizes.map((p, i) => (<div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm"><span className="font-bold text-gray-500 text-xs uppercase flex items-center gap-2"><span className="text-lg">{p.icon}</span> {p.rank} Place</span><span className="font-black text-lg text-blue-600">₹{p.amount}</span></div>))}</div></div></div><div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-6 rounded-t-[30px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50"><div className="flex justify-between items-end mb-4"><div><p className="text-xs text-gray-400 font-bold uppercase">Entry Fee</p><p className="text-3xl font-black text-gray-900">₹{selectedCat.fee}</p></div><div className="text-right"><p className="text-[10px] text-green-600 font-bold uppercase bg-green-50 px-2 py-1 rounded">Wallet: ₹{JSON.parse(localStorage.getItem("user"))?.wallet_balance || 0}</p></div></div><button onClick={handlePayment} disabled={loading} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all flex justify-center gap-2">{loading ? "Processing..." : <>Pay & Register <ChevronRight/></>}</button></div></div>
+        <div className="bg-white min-h-screen pb-32"><div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg"><button onClick={() => navigate('/compete')} className="mb-6 bg-white/20 p-2 rounded-full"><ArrowLeft size={24}/></button><h1 className="text-3xl font-black italic uppercase mb-2">{tournament.name}</h1><p className="text-blue-100 font-bold text-xs uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> {tournament.city || "Mumbai"} • {tournament.sport || "Padel"}</p></div>
+        
+        <div className="p-6 -mt-8">
+            <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6"><h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3><div className="space-y-3">{categories.map((cat, idx) => (<button key={idx} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat.name === cat.name ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}><div className="text-left"><span className="font-bold text-sm block">{cat.name}</span><span className="text-[10px] font-bold opacity-70">Entry Fee: ₹{cat.fee}</span></div>{selectedCat.name === cat.name && <CheckCircle size={18}/>}</button>))}</div></div>
+            
+            {/* NEW: SCHEDULE & VENUE SECTION */}
+            <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
+                <div className="flex items-center gap-2 mb-4"><Calendar className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Schedule & Venue</h3></div>
+                
+                {schedule.length > 0 && (
+                    <div className="mb-6 bg-gray-50 rounded-xl p-4">
+                        {schedule.map((row, idx) => (
+                            <div key={idx} className="flex justify-between text-sm py-2 border-b border-gray-200 last:border-0">
+                                <span className="font-bold text-gray-500 w-1/3">{row.label}</span>
+                                <span className="font-black text-gray-800 text-right flex-1">{row.value}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {tournament.venue && (
+                    <div className="flex items-start gap-3">
+                        <MapPin className="text-gray-400 mt-1" size={16} />
+                        <p className="text-xs font-bold text-gray-600 leading-relaxed">{tournament.venue}</p>
+                    </div>
+                )}
+            </div>
+
+            <div className="bg-blue-50 p-6 rounded-[30px] border border-blue-100 mb-24"><div className="flex items-center gap-3 mb-6"><Trophy className="text-yellow-500" size={24} fill="currentColor"/><div><span className="block font-black text-lg text-blue-900 uppercase italic">Prize Pool</span><span className="text-[10px] font-bold text-blue-400 uppercase">{selectedCat.name} Only</span></div></div><div className="space-y-3">{prizes.map((p, i) => (<div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm"><span className="font-bold text-gray-500 text-xs uppercase flex items-center gap-2"><span className="text-lg">{p.icon}</span> {p.rank} Place</span><span className="font-black text-lg text-blue-600">₹{p.amount}</span></div>))}</div></div>
+        </div>
+        
+        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-6 rounded-t-[30px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50"><div className="flex justify-between items-end mb-4"><div><p className="text-xs text-gray-400 font-bold uppercase">Entry Fee</p><p className="text-3xl font-black text-gray-900">₹{selectedCat.fee}</p></div><div className="text-right"><p className="text-[10px] text-green-600 font-bold uppercase bg-green-50 px-2 py-1 rounded">Wallet: ₹{JSON.parse(localStorage.getItem("user"))?.wallet_balance || 0}</p></div></div><button onClick={handlePayment} disabled={loading} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all flex justify-center gap-2">{loading ? "Processing..." : <>Pay & Register <ChevronRight/></>}</button></div></div>
     );
 };
 
-// --- COMPETE PAGE (UPDATED WITH CITY FILTER) ---
+// --- COMPETE PAGE (UPDATED WITH UNIQUE CITY FILTER & SPORTS) ---
 const CompetePage = () => {
     const [tournaments, setTournaments] = useState([]);
     const [filteredTournaments, setFilteredTournaments] = useState([]);
     const [cities, setCities] = useState([]);
-    const [selectedCity, setSelectedCity] = useState("Mumbai"); // Default
+    const [selectedCity, setSelectedCity] = useState("MUMBAI"); 
+    const [selectedSport, setSelectedSport] = useState("All");
 
     const navigate = useNavigate();
     
@@ -117,38 +148,54 @@ const CompetePage = () => {
         .then(res => res.json())
         .then(data => {
             setTournaments(data);
-            
-            // Extract Unique Cities
-            const uniqueCities = [...new Set(data.map(t => t.city || "Mumbai"))];
+            const allCities = data.map(t => (t.city || "Mumbai").trim().toUpperCase());
+            const uniqueCities = [...new Set(allCities)];
             setCities(uniqueCities);
             if(uniqueCities.length > 0) setSelectedCity(uniqueCities[0]);
         }); 
     }, []);
 
     useEffect(() => {
-        // Filter Logic
+        let filtered = tournaments;
         if(selectedCity) {
-            setFilteredTournaments(tournaments.filter(t => (t.city || "Mumbai") === selectedCity));
-        } else {
-            setFilteredTournaments(tournaments);
+            filtered = filtered.filter(t => (t.city || "Mumbai").trim().toUpperCase() === selectedCity);
         }
-    }, [selectedCity, tournaments]);
+        if(selectedSport && selectedSport !== "All") {
+            filtered = filtered.filter(t => (t.sport || "Padel") === selectedSport);
+        }
+        setFilteredTournaments(filtered);
+    }, [selectedCity, selectedSport, tournaments]);
+
+    const availableSports = ["All", ...new Set(
+        tournaments
+        .filter(t => (t.city || "Mumbai").trim().toUpperCase() === selectedCity)
+        .map(t => t.sport || "Padel")
+    )];
 
     return (
         <div className="pb-24 bg-gray-50 min-h-screen font-sans">
             <div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg mb-[-20px]">
                 <h1 className="text-3xl font-black italic uppercase">Events</h1>
                 <p className="text-blue-100 text-xs font-bold uppercase tracking-widest mb-4">Select a League to Join</p>
-                
-                {/* CITY SELECTOR */}
-                <div className="bg-white/20 p-1 rounded-xl flex overflow-x-auto no-scrollbar gap-2">
+                <div className="bg-white/20 p-1 rounded-xl flex overflow-x-auto no-scrollbar gap-2 mb-4">
                     {cities.map(city => (
                         <button 
                             key={city} 
-                            onClick={() => setSelectedCity(city)}
+                            onClick={() => { setSelectedCity(city); setSelectedSport("All"); }}
                             className={`px-4 py-2 rounded-lg text-xs font-bold uppercase whitespace-nowrap transition-all ${selectedCity === city ? 'bg-white text-blue-600 shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
                         >
                             {city}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex overflow-x-auto no-scrollbar gap-2">
+                    {availableSports.map(sport => (
+                        <button 
+                            key={sport} 
+                            onClick={() => setSelectedSport(sport)}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase border whitespace-nowrap transition-all ${selectedSport === sport ? 'bg-yellow-400 text-blue-900 border-yellow-400' : 'bg-blue-700 text-blue-200 border-blue-500'}`}
+                        >
+                            {sport}
                         </button>
                     ))}
                 </div>
@@ -159,7 +206,8 @@ const CompetePage = () => {
                     filteredTournaments.map(t => (
                         <div key={t.id} onClick={() => navigate(`/register/${t.id}`)} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center cursor-pointer hover:shadow-md transition-all active:scale-95">
                             <div>
-                                <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded uppercase mb-2 inline-block">{t.type}</span>
+                                <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded uppercase mb-2 inline-block mr-2">{t.type}</span>
+                                <span className="bg-yellow-50 text-yellow-700 text-[10px] font-bold px-2 py-1 rounded uppercase mb-2 inline-block">{t.sport || "Padel"}</span>
                                 <h3 className="font-bold text-gray-800 text-lg">{t.name}</h3>
                                 <p className="text-gray-400 text-xs font-bold flex items-center gap-1"><MapPin size={10}/> {t.city || "Mumbai"} • Starts from ₹{t.fee}</p>
                             </div>
@@ -167,7 +215,7 @@ const CompetePage = () => {
                         </div>
                     ))
                 ) : (
-                    <div className="text-center text-gray-400 mt-10 text-xs font-bold">No events in {selectedCity}.</div>
+                    <div className="text-center text-gray-400 mt-10 text-xs font-bold">No events in {selectedCity} for {selectedSport}.</div>
                 )}
             </div>
         </div>
@@ -176,14 +224,12 @@ const CompetePage = () => {
 
 // --- UPDATED: OngoingEvents (Now Accepts City) ---
 const OngoingEvents = ({ category, city, level, myTeamID }) => {
-    // FIX: Using passed 'city' prop instead of deriving it incorrectly
     const [activeTab, setActiveTab] = useState("SCHEDULE"); const [activeGroup, setActiveGroup] = useState('A'); const [schedule, setSchedule] = useState([]); const [standings, setStandings] = useState([]); const [scores, setScores] = useState({}); const [selectedMatch, setSelectedMatch] = useState(null); const [scoreInput, setScoreInput] = useState("");
     
     const fetchData = async () => { 
         try { 
             const safeLevel = level || "";
             const encodedLevel = encodeURIComponent(safeLevel);
-            // Updated URL to fetch by tournament AND city
             const [schRes, scoreRes, rankRes] = await Promise.all([ 
                 fetch('http://127.0.0.1:8000/generate-test-season'), 
                 fetch('http://127.0.0.1:8000/scores'), 
@@ -192,8 +238,6 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
             const schData = await schRes.json(); 
             const scoreData = await scoreRes.json(); 
             const rankData = await rankRes.json(); 
-            
-            // Filter Matches by Name AND City
             const allMatches = schData.full_schedule?.schedule || []; 
             const myMatches = allMatches.filter(m => m.category === category && m.city === city).sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time)); 
             
@@ -223,12 +267,10 @@ const HomePage = ({ user, onRefresh }) => {
   const navigate = useNavigate(); 
   const [availableTournaments, setAvailableTournaments] = useState([]);
   
-  // FIX: Store composite key (Name + City) to distinguish duplicates
   const [viewingKey, setViewingKey] = useState(""); 
   
   useEffect(() => { 
       if (user?.registrations?.length > 0) {
-          // Construct default key from first registration
           setViewingKey(`${user.registrations[0].tournament}|${user.registrations[0].city}`);
       }
   }, [user]);
@@ -249,19 +291,14 @@ const HomePage = ({ user, onRefresh }) => {
       refreshUser();
   }, []);
 
-  // Parse Key to get Name and City
   const [viewName, viewCity] = viewingKey ? viewingKey.split('|') : ["", ""];
-  
-  // Find registration that matches BOTH Name and City
   const currentRegistration = user?.registrations?.find(r => r.tournament === viewName && r.city === viewCity);
 
   const handleQuickAction = (action) => { if (action === 'Compete') navigate('/compete'); else alert("Coming Soon!"); };
   
   return (
     <div className="pb-24 bg-gray-50 min-h-screen font-sans text-gray-900"><div className="bg-blue-600 p-6 pt-12 pb-20 rounded-b-[40px] shadow-lg mb-[-40px]"><div className="flex justify-between items-center mb-6 text-white"><h1 className="text-xl font-extrabold italic tracking-wide">PLAYTOMIC</h1><div className="flex gap-4"><Search size={20} /><Bell size={20} /></div></div><div className="flex justify-between items-center text-white"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-xl">{user?.name?.charAt(0)}</div><div><h2 className="text-xl font-bold">{user?.name}</h2><p className="text-blue-200 text-xs font-bold">{user?.team_id}</p></div></div><div className="relative">
-    {/* UPDATED SELECTOR TO USE COMPOSITE KEY */}
     <select value={viewingKey} onChange={(e) => setViewingKey(e.target.value)} className="appearance-none bg-blue-700 text-white font-bold text-xs py-2 pl-3 pr-8 rounded-lg outline-none">
-        {/* Only show tournaments user is registered for OR all tournaments? Assuming user wants to switch between their registered events here */}
         {user?.registrations && user.registrations.length > 0 ? (
              user.registrations.map((r, idx) => (
                 <option key={idx} value={`${r.tournament}|${r.city}`}>{r.tournament} ({r.city})</option>
@@ -272,7 +309,6 @@ const HomePage = ({ user, onRefresh }) => {
     </select>
     <ChevronDown size={14} className="absolute right-2 top-2.5 text-white pointer-events-none" /></div></div></div><div className="mx-6 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 flex justify-between items-center relative z-10 mb-8"><div className="text-center flex-1 border-r border-gray-100"><p className="text-[10px] text-gray-400 font-bold uppercase">Wallet</p><p className="text-xl font-black text-gray-800">₹{user?.wallet_balance || 0}</p></div><div className="text-center flex-1"><p className="text-[10px] text-gray-400 font-bold uppercase">Matches</p><p className="text-xl font-black text-gray-800">0</p></div></div><div className="px-6 grid grid-cols-4 gap-4 text-center mb-4">{['Book Court', 'Learn', 'Compete', 'Find Match'].map((item, i) => (<div key={i} onClick={() => handleQuickAction(item)} className="flex flex-col items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 transition-transform"><div className={`w-14 h-14 rounded-full shadow-sm border border-gray-100 flex items-center justify-center ${item === 'Compete' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-600'}`}>{item === 'Compete' ? <Trophy size={24} /> : <div className="w-6 h-6 bg-blue-100 rounded-full"/>}</div><span className="text-[10px] font-bold text-gray-600">{item}</span></div>))}</div>
     {currentRegistration ? 
-        // PASSING CITY PROP HERE
         <OngoingEvents category={viewName} city={viewCity} level={currentRegistration.level} myTeamID={user?.team_id} /> 
         : 
         <div className="mx-6 mt-16 p-6 bg-white rounded-3xl border border-dashed border-gray-300 text-center"><Trophy className="mx-auto text-gray-300 mb-2" size={32}/><p className="text-xs font-bold text-gray-400 mb-4">Not registered for any active event.</p><button onClick={() => navigate('/compete')} className="bg-blue-600 text-white text-xs font-black uppercase px-6 py-3 rounded-xl shadow-lg">Find a League</button></div>}
