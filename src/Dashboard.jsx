@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin } from 'lucide-react';
 
 const Dashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -19,6 +19,7 @@ const Dashboard = () => {
   // Create/Edit Event States
   const [editingId, setEditingId] = useState(null); 
   const [eventName, setEventName] = useState("");
+  const [eventCity, setEventCity] = useState("Mumbai"); 
   const [eventType, setEventType] = useState("League");
   const [eventStatus, setEventStatus] = useState("Open");
   const [categories, setCategories] = useState([{ name: "Advance", fee: 2500, p1: 30000, p2: 15000, p3: 5000 }]);
@@ -40,11 +41,26 @@ const Dashboard = () => {
   
   const fetchTournaments = async () => { try { const res = await fetch(`${API_URL}/tournaments`); setTournaments(await res.json()); } catch (e) {} };
   
-  const fetchMatches = async () => { try { const res = await fetch(`${API_URL}/scores`); const data = await res.json(); const filtered = selectedTournament ? data.filter(m => m.category === selectedTournament.name) : data; setMatches(filtered.sort((a,b) => a.id - b.id)); } catch(e) {} };
+  const fetchMatches = async () => { 
+      try { 
+          const res = await fetch(`${API_URL}/scores`); 
+          const data = await res.json(); 
+          // Filter by Name AND City
+          const filtered = selectedTournament ? data.filter(m => m.category === selectedTournament.name && m.city === selectedTournament.city) : data; 
+          setMatches(filtered.sort((a,b) => a.id - b.id)); 
+      } catch(e) {} 
+  };
   
   const fetchPlayers = async () => { try { const res = await fetch(`${API_URL}/admin/players`); setPlayers(await res.json()); } catch(e){} };
   
-  const fetchTournamentPlayers = async () => { if(!selectedTournament) return; try { const res = await fetch(`${API_URL}/admin/tournament-players/${selectedTournament.name}`); setTournamentPlayers(await res.json()); } catch(e){} };
+  const fetchTournamentPlayers = async () => { 
+      if(!selectedTournament) return; 
+      try { 
+          // Updated URL to include query params
+          const res = await fetch(`${API_URL}/admin/tournament-players?name=${selectedTournament.name}&city=${selectedTournament.city}`); 
+          setTournamentPlayers(await res.json()); 
+      } catch(e){} 
+  };
 
   useEffect(() => { 
       if(isAuthenticated) { 
@@ -74,11 +90,12 @@ const Dashboard = () => {
   
   const handleDeleteTournament = async (id) => { if(!window.confirm("Delete this event?")) return; await fetch(`${API_URL}/admin/delete-tournament`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchTournaments(); if(selectedTournament?.id === id) setSelectedTournament(null); };
   
-  const openCreateModal = () => { setEditingId(null); setEventName(""); setEventType("League"); setEventStatus("Open"); setDrawSize(16); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); setIsModalOpen(true); };
+  const openCreateModal = () => { setEditingId(null); setEventName(""); setEventCity("Mumbai"); setEventType("League"); setEventStatus("Open"); setDrawSize(16); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); setIsModalOpen(true); };
   
   const openEditModal = (t) => { 
       setEditingId(t.id); 
       setEventName(t.name); 
+      setEventCity(t.city || "Mumbai"); 
       setEventType(t.type); 
       setEventStatus(t.status); 
       setDrawSize(t.draw_size || 16); 
@@ -92,6 +109,7 @@ const Dashboard = () => {
       const body = { 
           id: editingId, 
           name: eventName, 
+          city: eventCity, 
           type: eventType, 
           status: eventStatus, 
           settings: categories,
@@ -117,6 +135,7 @@ const Dashboard = () => {
                 name: manualName,
                 phone: manualPhone,
                 category: selectedTournament.name,
+                city: selectedTournament.city, // Send City
                 level: activeLevelTab
             })
         });
@@ -143,6 +162,7 @@ const Dashboard = () => {
           headers: {'Content-Type': 'application/json'}, 
           body: JSON.stringify({ 
               category: selectedTournament.name, 
+              city: selectedTournament.city, // Send City
               group_id: group, 
               t1: newMatchT1, 
               t2: newMatchT2, 
@@ -165,8 +185,12 @@ const Dashboard = () => {
       {/* MODAL */}
       {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
       
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
+        <div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value)} placeholder="e.g. Mumbai" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
         <div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div>
         <div>
             <label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label>
@@ -198,7 +222,10 @@ const Dashboard = () => {
                 {tournaments.map(t => (
                     <div key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-pointer relative group">
                         <div className="absolute top-4 right-4 flex gap-2 z-10"><button onClick={(e) => { e.stopPropagation(); handleDeleteTournament(t.id); }} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 hover:text-red-700"><Trash2 size={16}/></button><button onClick={(e) => { e.stopPropagation(); openEditModal(t); }} className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-blue-100 hover:text-blue-600"><Edit2 size={16}/></button></div>
-                        <div className="flex justify-between items-start mb-4"><span className="bg-blue-100 text-blue-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.type}</span></div><h3 className="font-bold text-xl text-gray-800 mb-1">{t.name}</h3>
+                        <div className="flex justify-between items-start mb-4"><span className="bg-blue-100 text-blue-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.type}</span></div>
+                        <h3 className="font-bold text-xl text-gray-800 mb-1">{t.name}</h3>
+                        <p className="text-xs font-bold text-gray-400 flex items-center gap-1 mb-4"><MapPin size={12}/> {t.city || "Mumbai"}</p>
+                        
                         <div className="flex gap-4 text-sm text-gray-500 mt-4 border-t border-gray-50 pt-4">
                             <div><span className="block text-[10px] font-bold uppercase text-gray-300">Fee Starts</span>₹{t.fee}</div>
                             <div><span className="block text-[10px] font-bold uppercase text-gray-300">Draw Size</span>{t.draw_size || 16}</div>
@@ -207,14 +234,14 @@ const Dashboard = () => {
                 ))}
             </div>
         )}
-
+        
         {activeTab === "PLAYERS" && (
             <div><h2 className="text-3xl font-black text-gray-800 mb-6">Player Management</h2><div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8 max-w-xl"><h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Wallet size={18}/> Quick Top-Up</h3><div className="flex gap-4"><input value={walletTeamId} onChange={e => setWalletTeamId(e.target.value)} placeholder="Team ID (e.g. SA99)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/2"/><input value={walletAmount} onChange={e => setWalletAmount(e.target.value)} type="number" placeholder="Amount (₹)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/3"/><button onClick={handleAddMoney} className="bg-green-600 text-white font-bold px-6 rounded-lg hover:bg-green-700">ADD</button></div></div><div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Name</th><th className="p-4">Phone</th><th className="p-4">Team ID</th><th className="p-4">Wallet Balance</th></tr></thead><tbody className="divide-y divide-gray-50">{players.map(p => (<tr key={p.id}><td className="p-4 font-bold text-gray-800">{p.name}</td><td className="p-4 text-gray-500 font-bold">{p.phone}</td><td className="p-4"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded font-black text-xs">{p.team_id}</span></td><td className="p-4 font-black text-green-600">₹{p.wallet_balance}</td></tr>))}</tbody></table></div></div>
         )}
 
         {activeTab === "MANAGE" && selectedTournament && (
             <div className="max-w-6xl">
-                <div className="flex justify-between items-center mb-4"><div><button onClick={() => setActiveTab("TOURNAMENTS")} className="text-xs font-bold text-gray-400 hover:text-gray-600 mb-1">← Back to Events</button><h2 className="text-3xl font-black text-blue-900">{selectedTournament.name}</h2></div><button onClick={fetchMatches} className="p-2 bg-white border rounded hover:bg-gray-50"><RefreshCw size={20}/></button></div>
+                <div className="flex justify-between items-center mb-4"><div><button onClick={() => setActiveTab("TOURNAMENTS")} className="text-xs font-bold text-gray-400 hover:text-gray-600 mb-1">← Back to Events</button><h2 className="text-3xl font-black text-blue-900">{selectedTournament.name} ({selectedTournament.city})</h2></div><button onClick={fetchMatches} className="p-2 bg-white border rounded hover:bg-gray-50"><RefreshCw size={20}/></button></div>
                 
                 <div className="flex gap-2 mb-6 border-b border-gray-200">
                     {(() => {
@@ -244,7 +271,6 @@ const Dashboard = () => {
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                             <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 text-sm flex justify-between items-center">
                                 <span>Teams ({filteredPlayers.length})</span>
-                                {/* DYNAMIC LIMIT DISPLAY */}
                                 <span className={filteredPlayers.length >= (selectedTournament.draw_size || 16) ? "text-red-500 text-xs" : "text-green-500 text-xs"}>{filteredPlayers.length}/{selectedTournament.draw_size || 16} Filled</span>
                             </div>
                             <table className="w-full text-left text-sm">
