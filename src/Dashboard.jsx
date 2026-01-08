@@ -32,17 +32,20 @@ const Dashboard = () => {
   const [eventFormat, setEventFormat] = useState("Singles");
   const [eventType, setEventType] = useState("League");
   const [eventStatus, setEventStatus] = useState("Open");
-  const [categories, setCategories] = useState([{ name: "Advance", fee: 2500, p1: 30000, p2: 15000, p3: 5000 }]);
+  // Updated Categories to include per_match
+  const [categories, setCategories] = useState([{ name: "Advance", fee: 2500, p1: 30000, p2: 15000, p3: 5000, per_match: 500 }]);
   const [drawSize, setDrawSize] = useState(16);
   const [eventVenue, setEventVenue] = useState("");
   const [eventSchedule, setEventSchedule] = useState([{ label: "", value: "" }]);
 
   const [manualName, setManualName] = useState("");
   const [manualPhone, setManualPhone] = useState("");
+
   const [newMatchT1, setNewMatchT1] = useState("");
   const [newMatchT2, setNewMatchT2] = useState("");
   const [newMatchDate, setNewMatchDate] = useState("");
   const [newMatchTime, setNewMatchTime] = useState("");
+  const [newMatchStage, setNewMatchStage] = useState("Group Stage"); // NEW
 
   const API_URL = "http://127.0.0.1:8000"; 
 
@@ -98,11 +101,10 @@ const Dashboard = () => {
       } catch(e) { console.error(e); }
   };
 
-  // --- COLOR HELPER ---
   const getAmountColor = (t) => {
-      if (t.type === "CREDIT") return "text-green-600"; // Added
-      if (t.mode === "WITHDRAWAL") return "text-red-500"; // Withdrawal
-      return "text-pink-500"; // Event Fee (Spent)
+      if (t.type === "CREDIT") return "text-green-600"; 
+      if (t.mode === "WITHDRAWAL") return "text-red-500"; 
+      return "text-pink-500"; 
   };
 
   useEffect(() => { 
@@ -121,18 +123,29 @@ const Dashboard = () => {
   const handleAddMoney = async () => { if (!walletTeamId || !walletAmount) return alert("Fill fields"); const res = await fetch(`${API_URL}/admin/add-wallet`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: walletTeamId, amount: parseInt(walletAmount) }) }); if (res.ok) { alert("Money Added!"); setWalletTeamId(""); setWalletAmount(""); fetchPlayers(); } else { alert("Player Not Found"); } };
   const handleDeleteTournament = async (id) => { if(!window.confirm("Delete this event?")) return; await fetch(`${API_URL}/admin/delete-tournament`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchTournaments(); if(selectedTournament?.id === id) setSelectedTournament(null); };
   
-  const openCreateModal = () => { setEditingId(null); setEventName(""); setEventCity("MUMBAI"); setEventSport("Padel"); setEventFormat("Singles"); setEventType("League"); setEventStatus("Open"); setDrawSize(16); setEventVenue(""); setEventSchedule([{ label: "", value: "" }]); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); setIsModalOpen(true); };
-  const openEditModal = (t) => { setEditingId(t.id); setEventName(t.name); setEventCity(t.city || "MUMBAI"); setEventSport(t.sport || "Padel"); setEventFormat(t.format || "Singles"); setEventType(t.type); setEventStatus(t.status); setDrawSize(t.draw_size || 16); setEventVenue(t.venue || ""); try { setEventSchedule(JSON.parse(t.schedule || "[]")); } catch { setEventSchedule([{ label: "", value: "" }]); } try { setCategories(JSON.parse(t.settings || "[]")); } catch { setCategories([{ name: "Default", fee: t.fee, p1: 0, p2: 0, p3: 0 }]); } setIsModalOpen(true); };
+  const openCreateModal = () => { 
+      setEditingId(null); setEventName(""); setEventCity("MUMBAI"); setEventSport("Padel"); setEventFormat("Singles"); setEventType("League"); setEventStatus("Open"); setDrawSize(16); setEventVenue(""); setEventSchedule([{ label: "", value: "" }]); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0, per_match: 0 }]); setIsModalOpen(true); 
+  };
+  
+  const openEditModal = (t) => { 
+      setEditingId(t.id); setEventName(t.name); setEventCity(t.city || "MUMBAI"); setEventSport(t.sport || "Padel"); setEventFormat(t.format || "Singles"); setEventType(t.type); setEventStatus(t.status); setDrawSize(t.draw_size || 16); setEventVenue(t.venue || ""); 
+      try { setEventSchedule(JSON.parse(t.schedule || "[]")); } catch { setEventSchedule([{ label: "", value: "" }]); } 
+      try { setCategories(JSON.parse(t.settings || "[]")); } catch { setCategories([{ name: "Default", fee: t.fee, p1: 0, p2: 0, p3: 0, per_match: 0 }]); } 
+      setIsModalOpen(true); 
+  };
   
   const handleModalSubmit = async () => { 
       if(!eventName) return alert("Enter Name"); 
       const endpoint = editingId ? '/admin/edit-tournament' : '/admin/create-tournament'; 
-      const body = { id: editingId, name: eventName, city: eventCity, sport: eventSport, format: eventFormat, type: eventType, status: eventStatus, settings: categories, venue: eventVenue, schedule: eventSchedule, draw_size: parseInt(drawSize) }; 
-      await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); setIsModalOpen(false); fetchTournaments(); 
+      const body = { 
+          id: editingId, name: eventName, city: eventCity, sport: eventSport, format: eventFormat, type: eventType, status: eventStatus, settings: categories, venue: eventVenue, schedule: eventSchedule, draw_size: parseInt(drawSize) 
+      }; 
+      await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); 
+      setIsModalOpen(false); fetchTournaments(); 
   };
   
   const updateCategory = (idx, f, v) => { const n = [...categories]; n[idx][f] = v; setCategories(n); };
-  const addCategoryRow = () => setCategories([...categories, { name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]);
+  const addCategoryRow = () => setCategories([...categories, { name: "", fee: 0, p1: 0, p2: 0, p3: 0, per_match: 0 }]);
   const removeCategory = (idx) => setCategories(categories.filter((_, i) => i !== idx));
   const updateSchedule = (idx, f, v) => { const n = [...eventSchedule]; n[idx][f] = v; setEventSchedule(n); };
   const addScheduleRow = () => setEventSchedule([...eventSchedule, { label: "", value: "" }]);
@@ -151,7 +164,20 @@ const Dashboard = () => {
       if (!selectedTournament || !newMatchT1 || !newMatchT2) return alert("Select teams!"); 
       const t1Obj = filteredPlayers.find(p => p.name === newMatchT1);
       const group = t1Obj ? t1Obj.group_id : 'A';
-      await fetch(`${API_URL}/admin/create-match`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ category: selectedTournament.name, city: selectedTournament.city, group_id: group, t1: newMatchT1, t2: newMatchT2, date: newMatchDate, time: newMatchTime }) }); 
+      await fetch(`${API_URL}/admin/create-match`, { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify({ 
+              category: selectedTournament.name, 
+              city: selectedTournament.city, 
+              group_id: group, 
+              t1: newMatchT1, 
+              t2: newMatchT2, 
+              date: newMatchDate, 
+              time: newMatchTime,
+              stage: newMatchStage // SEND STAGE
+            }) 
+        }); 
       fetchMatches(); setNewMatchT1(""); setNewMatchT2("");
   };
   
@@ -184,7 +210,6 @@ const Dashboard = () => {
                                           <p className="text-[10px] text-gray-400 uppercase">{new Date(t.date).toLocaleDateString()}</p>
                                       </div>
                                       <div className="text-right">
-                                          {/* COLORED AMOUNT LOGIC */}
                                           <p className={`font-black text-sm ${getAmountColor(t)}`}>
                                               {t.type === "CREDIT" ? "+" : "-"}₹{t.amount}
                                           </p>
@@ -202,7 +227,36 @@ const Dashboard = () => {
       )}
 
       {/* --- EVENT MODAL --- */}
-      {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto"><div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">Sport</label><select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Padel">Padel</option><option value="Pickleball">Pickleball</option><option value="Tennis">Tennis</option><option value="Badminton">Badminton</option><option value="Box Cricket">Box Cricket</option><option value="Football">Football</option></select></div></div><div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="8">8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div></div><div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div><div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Venue Information</label><textarea value={eventVenue} onChange={e => setEventVenue(e.target.value)} placeholder="Enter full address, landmarks, or google maps link..." className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200 text-sm h-20 resize-none"/></div><div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Categories, Fees & Prizes</label><div className="space-y-2">{categories.map((cat, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Name" value={cat.name} onChange={e => updateCategory(idx, 'name', e.target.value)} className="w-40 p-2 bg-gray-50 rounded border text-xs font-bold"/><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Fee</span><input type="number" value={cat.fee} onChange={e => updateCategory(idx, 'fee', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">1st</span><input type="number" value={cat.p1} onChange={e => updateCategory(idx, 'p1', e.target.value)} className="w-24 p-2 bg-green-50 rounded border border-green-200 text-xs font-bold text-green-700"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">2nd</span><input type="number" value={cat.p2} onChange={e => updateCategory(idx, 'p2', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">3rd</span><input type="number" value={cat.p3} onChange={e => updateCategory(idx, 'p3', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><button onClick={() => removeCategory(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded mt-3"><Trash2 size={16}/></button></div>))}</div><button onClick={addCategoryRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1"><Plus size={14}/> Add Category</button></div><button onClick={handleModalSubmit} className="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">{editingId ? "Save Changes" : "Create Event"}</button></div></div></div>)}
+      {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+      
+      <div className="grid grid-cols-3 gap-4">
+        <div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
+        <div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
+        <div>
+            <label className="text-xs font-bold text-gray-400 uppercase">Sport</label>
+            <select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200">
+                <option value="Padel">Padel</option>
+                <option value="Pickleball">Pickleball</option>
+                <option value="Tennis">Tennis</option>
+                <option value="Badminton">Badminton</option>
+                <option value="Box Cricket">Box Cricket</option>
+                <option value="Football">Football</option>
+            </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div>
+        <div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div>
+        <div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="8">8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div>
+      </div>
+      
+      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label (e.g. Week 1)" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value (e.g. Mon, Wed, Fri)" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div>
+
+      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Venue Information</label><textarea value={eventVenue} onChange={e => setEventVenue(e.target.value)} placeholder="Enter full address, landmarks, or google maps link..." className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200 text-sm h-20 resize-none"/></div>
+      
+      {/* UPDATED CATEGORIES with PER MATCH WIN */}
+      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Categories, Fees & Prizes</label><div className="space-y-2">{categories.map((cat, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Name" value={cat.name} onChange={e => updateCategory(idx, 'name', e.target.value)} className="w-32 p-2 bg-gray-50 rounded border text-xs font-bold"/><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Fee</span><input type="number" value={cat.fee} onChange={e => updateCategory(idx, 'fee', e.target.value)} className="w-16 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">1st</span><input type="number" value={cat.p1} onChange={e => updateCategory(idx, 'p1', e.target.value)} className="w-20 p-2 bg-green-50 rounded border border-green-200 text-xs font-bold text-green-700"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">2nd</span><input type="number" value={cat.p2} onChange={e => updateCategory(idx, 'p2', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">3rd</span><input type="number" value={cat.p3} onChange={e => updateCategory(idx, 'p3', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Per Match</span><input type="number" value={cat.per_match} onChange={e => updateCategory(idx, 'per_match', e.target.value)} className="w-20 p-2 bg-blue-50 rounded border border-blue-200 text-xs font-bold text-blue-700"/></div><button onClick={() => removeCategory(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded mt-3"><Trash2 size={16}/></button></div>))}</div><button onClick={addCategoryRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1"><Plus size={14}/> Add Category</button></div><button onClick={handleModalSubmit} className="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">{editingId ? "Save Changes" : "Create Event"}</button></div></div></div>)}
 
       {/* --- SIDEBAR --- */}
       <div className="w-full md:w-64 bg-white border-r border-gray-200 p-4 flex-shrink-0">
@@ -257,14 +311,8 @@ const Dashboard = () => {
                         <td className="p-4 text-xs font-bold text-gray-500">{new Date(t.date).toLocaleDateString()} {new Date(t.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
                         <td className="p-4 font-bold text-gray-800">{t.user_name} <span className="text-gray-400 text-[10px]">({t.team_id})</span><br/><span className="text-[10px] text-gray-400">{t.user_phone}</span></td>
                         <td className="p-4 text-xs font-bold text-gray-600">{t.description} <span className="bg-gray-100 px-2 py-0.5 rounded text-[9px] uppercase ml-1">{t.mode}</span></td>
-                        
-                        {/* COLORED AMOUNT LOGIC */}
-                        <td className={`p-4 text-right font-black ${t.type === "CREDIT" ? "text-green-600" : "text-gray-300"}`}>
-                            {t.type === "CREDIT" ? `+₹${t.amount}` : "-"}
-                        </td>
-                        <td className={`p-4 text-right font-black ${t.type === "DEBIT" ? (t.mode === "WITHDRAWAL" ? "text-red-500" : "text-pink-500") : "text-gray-300"}`}>
-                            {t.type === "DEBIT" ? `-₹${t.amount}` : "-"}
-                        </td>
+                        <td className={`p-4 text-right font-black ${t.type === "CREDIT" ? "text-green-600" : "text-gray-300"}`}>{t.type === "CREDIT" ? `+₹${t.amount}` : "-"}</td>
+                        <td className={`p-4 text-right font-black ${t.type === "DEBIT" ? (t.mode === "WITHDRAWAL" ? "text-red-500" : "text-pink-500") : "text-gray-300"}`}>{t.type === "DEBIT" ? `-₹${t.amount}` : "-"}</td>
                       </tr>
                     ))}
                     {transactions.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-gray-400 text-xs font-bold">No transactions found.</td></tr>}
@@ -283,7 +331,6 @@ const Dashboard = () => {
                     </tr>))}</tbody></table></div></div>
         )}
 
-        {/* ... (MANAGE Tab same as before) ... */}
         {activeTab === "MANAGE" && selectedTournament && (
             <div className="max-w-6xl">
                 <div className="flex justify-between items-center mb-4"><div><button onClick={() => {setActiveTab("TOURNAMENTS"); setViewMode("MATCHES");}} className="text-xs font-bold text-gray-400 hover:text-gray-600 mb-1">← Back to Events</button><h2 className="text-3xl font-black text-blue-900">{selectedTournament.name} <span className="text-lg text-gray-400">({selectedTournament.city} • {selectedTournament.sport})</span></h2></div><button onClick={() => {fetchMatches(); fetchLeaderboard();}} className="p-2 bg-white border rounded hover:bg-gray-50"><RefreshCw size={20}/></button></div>
@@ -340,13 +387,21 @@ const Dashboard = () => {
                                 <div className="grid grid-cols-3 gap-3 mb-3">
                                     <input onChange={e=>setNewMatchDate(e.target.value)} type="date" className="p-2 bg-gray-50 rounded border text-sm font-bold"/>
                                     <input onChange={e=>setNewMatchTime(e.target.value)} type="time" className="p-2 bg-gray-50 rounded border text-sm font-bold"/>
-                                    <button onClick={handleCreateMatch} className="bg-black text-white font-bold rounded-lg text-sm hover:bg-gray-800">+ Add Match</button>
+                                    {/* MATCH STAGE SELECTOR */}
+                                    <select onChange={e=>setNewMatchStage(e.target.value)} className="p-2 bg-gray-50 rounded border text-sm font-bold">
+                                        <option value="Group Stage">Group Stage</option>
+                                        <option value="Quarter Final">Quarter Final</option>
+                                        <option value="Semi Final">Semi Final</option>
+                                        <option value="3rd Place">3rd Place</option>
+                                        <option value="Final">Final</option>
+                                    </select>
                                 </div>
+                                <button onClick={handleCreateMatch} className="w-full bg-black text-white font-bold rounded-lg text-sm hover:bg-gray-800 p-3">+ Add Match</button>
                             </div>
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                                 <table className="w-full text-left text-sm">
                                     <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Schedule</th><th className="p-4">Score</th><th className="p-4 text-right">Actions</th></tr></thead>
-                                    <tbody className="divide-y divide-gray-50">{matches.map(m => (<tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/></div></td><td className="p-4"><div className="flex flex-col gap-1"><input type="date" id={`date-${m.id}`} defaultValue={m.date} className="p-1 bg-transparent rounded text-xs font-bold border-none w-28"/><input type="time" id={`time-${m.id}`} defaultValue={m.time} className="p-1 bg-transparent rounded text-xs font-bold border-none w-20"/></div></td><td className="p-4"><input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-white border border-gray-200 text-center rounded font-bold p-2"/>{m.status === "Pending Verification" && <p className="text-[9px] text-orange-500 font-bold mt-1">PENDING</p>}{m.status === "Official" && <p className="text-[9px] text-green-500 font-bold mt-1">OFFICIAL</p>}</td><td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody>
+                                    <tbody className="divide-y divide-gray-50">{matches.map(m => (<tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><span className="text-[9px] text-gray-400 uppercase font-bold bg-gray-100 px-1 rounded w-fit">{m.stage}</span></div></td><td className="p-4"><div className="flex flex-col gap-1"><input type="date" id={`date-${m.id}`} defaultValue={m.date} className="p-1 bg-transparent rounded text-xs font-bold border-none w-28"/><input type="time" id={`time-${m.id}`} defaultValue={m.time} className="p-1 bg-transparent rounded text-xs font-bold border-none w-20"/></div></td><td className="p-4"><input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-white border border-gray-200 text-center rounded font-bold p-2"/>{m.status === "Pending Verification" && <p className="text-[9px] text-orange-500 font-bold mt-1">PENDING</p>}{m.status === "Official" && <p className="text-[9px] text-green-500 font-bold mt-1">OFFICIAL</p>}</td><td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody>
                                 </table>
                             </div>
                         </div>

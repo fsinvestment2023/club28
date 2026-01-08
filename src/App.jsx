@@ -31,7 +31,7 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
                                 <div key={idx} className="flex p-3 hover:bg-blue-50 transition-colors">
                                     <div className="w-14 pr-2 border-r border-gray-100 flex flex-col justify-center"><span className="text-xs font-black text-gray-900">{time.replace(":00 ", "")}</span><span className="text-[8px] font-bold text-gray-400 uppercase">{time.slice(-2)}</span></div>
                                     <div className="flex-1 grid grid-cols-1 gap-2 pl-3">{timeMatches.map((m, mIdx) => (
-                                            <div key={mIdx} className="flex items-center justify-between"><div className="text-xs w-full">{m.t1 === "TBD" ? (<div className="flex items-center gap-2"><span className="bg-gray-100 text-gray-500 text-[9px] font-bold px-2 py-0.5 rounded uppercase">{m.stage}</span><span className="text-[9px] text-gray-400 italic">{m.group}</span></div>) : (<div className="flex items-center gap-1"><span className={m.t1 === myTeamID ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t1}</span><span className="text-[9px] text-gray-300 px-1">vs</span><span className={m.t2 === myTeamID ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t2}</span></div>)}</div>{onAction && m.t1 !== "TBD" && onAction(m)}</div>))}</div></div>))}</div></div>);})
+                                            <div key={mIdx} className="flex items-center justify-between"><div className="text-xs w-full">{m.t1 === "TBD" ? (<div className="flex items-center gap-2"><span className="bg-gray-100 text-gray-500 text-[9px] font-bold px-2 py-0.5 rounded uppercase">{m.stage}</span><span className="text-[9px] text-gray-400 italic">{m.group}</span></div>) : (<div className="flex items-center gap-1"><span className={m.t1.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t1}</span><span className="text-[9px] text-gray-300 px-1">vs</span><span className={m.t2.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t2}</span></div>)}</div>{onAction && m.t1 !== "TBD" && onAction(m)}</div>))}</div></div>))}</div></div>);})
             }</div>
     );
 };
@@ -55,8 +55,6 @@ const LoginPage = ({ onLogin }) => {
 
 const TournamentRegistration = ({ onRegister }) => {
     const navigate = useNavigate(); const { id } = useParams(); const [tournament, setTournament] = useState(null); const [categories, setCategories] = useState([]); const [selectedCat, setSelectedCat] = useState(null); const [loading, setLoading] = useState(false);
-    
-    // NEW STATES
     const [schedule, setSchedule] = useState([]);
     const [partnerId, setPartnerId] = useState("");
     
@@ -96,7 +94,6 @@ const TournamentRegistration = ({ onRegister }) => {
             if (data.status === "pending_partner") {
                 alert(`Registered! We notified ${partnerId}. They must confirm payment.`);
             } else {
-                // Team/Single Success
                 const updatedUser = { ...user, wallet_balance: data.user.wallet_balance, registrations: data.registrations };
                 localStorage.setItem("user", JSON.stringify(updatedUser)); 
                 onRegister(updatedUser); 
@@ -114,7 +111,6 @@ const TournamentRegistration = ({ onRegister }) => {
     if (!tournament || !selectedCat) return <div className="p-10 text-center text-gray-500">Loading Event...</div>;
     const prizes = [ { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, { rank: '3rd', amount: selectedCat.p3, icon: '🥉' } ];
     
-    // Fee Calculation (Per Person vs Team)
     const perPersonFee = selectedCat.fee;
     const teamFee = selectedCat.fee * 2;
     const isDoubles = tournament.format === "Doubles";
@@ -125,7 +121,6 @@ const TournamentRegistration = ({ onRegister }) => {
         <div className="p-6 -mt-8">
             <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6"><h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3><div className="space-y-3">{categories.map((cat, idx) => (<button key={idx} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat.name === cat.name ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}><div className="text-left"><span className="font-bold text-sm block">{cat.name}</span><span className="text-[10px] font-bold opacity-70">Per Person: ₹{cat.fee}</span></div>{selectedCat.name === cat.name && <CheckCircle size={18}/>}</button>))}</div></div>
             
-            {/* PARTNER INPUT */}
             {isDoubles && (
                 <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
                     <div className="flex items-center gap-2 mb-4"><UserPlus className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Doubles Partner</h3></div>
@@ -138,7 +133,6 @@ const TournamentRegistration = ({ onRegister }) => {
                 </div>
             )}
 
-            {/* SCHEDULE & VENUE */}
             <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
                 <div className="flex items-center gap-2 mb-4"><Calendar className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Schedule & Venue</h3></div>
                 {schedule.length > 0 && (<div className="mb-6 bg-gray-50 rounded-xl p-4">{schedule.map((row, idx) => (<div key={idx} className="flex justify-between text-sm py-2 border-b border-gray-200 last:border-0"><span className="font-bold text-gray-500 w-1/3">{row.label}</span><span className="font-black text-gray-800 text-right flex-1">{row.value}</span></div>))}</div>)}
@@ -203,6 +197,7 @@ const CompetePage = () => {
     );
 };
 
+// --- ONGOING EVENTS (SCORE INPUT & VERIFY) ---
 const OngoingEvents = ({ category, city, level, myTeamID }) => {
     const [activeTab, setActiveTab] = useState("SCHEDULE"); const [activeGroup, setActiveGroup] = useState('A'); const [schedule, setSchedule] = useState([]); const [standings, setStandings] = useState([]); const [scores, setScores] = useState({}); const [selectedMatch, setSelectedMatch] = useState(null); const [scoreInput, setScoreInput] = useState("");
     const fetchData = async () => { try { const safeLevel = level || ""; const encodedLevel = encodeURIComponent(safeLevel); const [schRes, scoreRes, rankRes] = await Promise.all([ fetch('http://127.0.0.1:8000/generate-test-season'), fetch('http://127.0.0.1:8000/scores'), fetch(`http://127.0.0.1:8000/standings?tournament=${category}&city=${city}&level=${encodedLevel}`) ]); const schData = await schRes.json(); const scoreData = await scoreRes.json(); const rankData = await rankRes.json(); const allMatches = schData.full_schedule?.schedule || []; const myMatches = allMatches.filter(m => m.category === category && m.city === city).sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time)); setSchedule(myMatches); setStandings(rankData); const scoreMap = {}; scoreData.forEach(s => scoreMap[s.id] = s); setScores(scoreMap); } catch(err) { console.log(err); } };
@@ -211,14 +206,46 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
     const handleVerify = async (matchId, action) => { await fetch('http://127.0.0.1:8000/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action === "APPROVE" ? "Score Verified!" : "Score Rejected"); fetchData(); };
     const filteredStandings = standings.filter(t => t.group === activeGroup).sort((a, b) => b.points - a.points);
     const getRankIcon = (index) => { if (index < 2) return <div className="bg-green-100 text-green-600 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">Q</div>; return <span className="font-bold text-gray-400 text-xs w-5 text-center">{index + 1}</span>; };
-    const renderMatchAction = (match) => { const scoreEntry = scores[match.id]; if (!scoreEntry) return <button onClick={() => setSelectedMatch(match)} className="bg-blue-50 text-blue-600 text-[8px] font-bold px-2 py-1 rounded border border-blue-100">+ Score</button>; if (scoreEntry.status === "Official") return <span className="text-green-600 text-[9px] font-black">{scoreEntry.score}</span>; if (scoreEntry.status === "Disputed") return <span className="text-red-500 text-[9px] font-black">⚠ Disputed</span>; const iSubmittedIt = scoreEntry.submitted_by_team === myTeamID; if (iSubmittedIt) return <span className="text-gray-300 text-[8px] font-bold">Wait...</span>; return <div className="flex gap-1"><button onClick={() => handleVerify(match.id, "DENY")} className="text-red-500 text-[8px] font-bold border border-red-100 px-1 rounded">X</button><button onClick={() => handleVerify(match.id, "APPROVE")} className="text-green-600 text-[8px] font-bold border border-green-100 px-1 rounded">✓</button></div>; };
+    
+    // --- UPDATED MATCH ACTION LOGIC ---
+    const renderMatchAction = (match) => { 
+        const scoreEntry = scores[match.id]; 
+        
+        // CHECK IF I AM IN THIS MATCH (Using Team ID inside the name string)
+        const iAmInT1 = match.t1.includes(myTeamID);
+        const iAmInT2 = match.t2.includes(myTeamID);
+        
+        if (!iAmInT1 && !iAmInT2) return null; // Don't show buttons if not my match
+
+        if (!scoreEntry || !scoreEntry.score) return <button onClick={() => setSelectedMatch(match)} className="bg-blue-50 text-blue-600 text-[8px] font-bold px-2 py-1 rounded border border-blue-100">+ Score</button>; 
+        if (scoreEntry.status === "Official") return <span className="text-green-600 text-[9px] font-black">{scoreEntry.score}</span>; 
+        if (scoreEntry.status === "Disputed") return <span className="text-red-500 text-[9px] font-black">⚠ Disputed</span>; 
+        
+        // Check who submitted
+        const myTeamString = iAmInT1 ? match.t1 : match.t2;
+        // If my team submitted -> Waiting
+        if (myTeamString.includes(scoreEntry.submitted_by_team)) {
+             return <span className="text-gray-400 text-[8px] font-bold italic">Waiting...</span>; 
+        }
+        
+        // If Opponent submitted -> Verify
+        return (
+            <div className="flex gap-1 items-center">
+                <span className="text-xs font-black mr-1">{scoreEntry.score}</span>
+                <button onClick={() => handleVerify(match.id, "DENY")} className="text-red-500 text-[8px] font-bold border border-red-100 px-1 rounded">X</button>
+                <button onClick={() => handleVerify(match.id, "APPROVE")} className="text-green-600 text-[8px] font-bold border border-green-100 px-1 rounded">✓</button>
+            </div>
+        ); 
+    };
+
     return (
-        <div className="mt-8 mb-24 px-6"><div className="flex items-center gap-2 mb-4"><Activity className="text-green-500 animate-pulse" size={20}/><h2 className="text-lg font-black italic uppercase">Ongoing Event ({city})</h2></div><div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden"><div className="bg-blue-600 p-4 flex justify-between items-center text-white"><div><p className="text-[10px] font-bold opacity-80 uppercase">Tournament</p><h3 className="font-black text-lg italic">{category} <span className="text-sm font-black text-yellow-300 ml-1">({level ? level.toUpperCase() : "..."})</span></h3></div><div className="text-right"><p className="text-[10px] font-bold opacity-80 uppercase">My Rank</p><p className="font-black text-2xl">#{standings.findIndex(t => t.name === myTeamID) + 1 || "-"}</p></div></div><div className="flex border-b border-gray-100 divide-x divide-gray-100"><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Played</p><p className="font-black text-lg">{standings.find(t => t.team_id === myTeamID)?.played || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Won</p><p className="font-black text-lg text-green-600">{standings.find(t => t.team_id === myTeamID)?.gamesWon || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Points</p><p className="font-black text-lg text-blue-600">{standings.find(t => t.team_id === myTeamID)?.points || 0}</p></div></div><div className="flex border-b border-gray-100"><button onClick={() => setActiveTab("SCHEDULE")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "SCHEDULE" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Schedule</button><button onClick={() => setActiveTab("STANDINGS")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "STANDINGS" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Leaderboard</button></div><div className="max-h-96 overflow-y-auto">{activeTab === "SCHEDULE" ? ( <CompactScheduleList matches={schedule} myTeamID={myTeamID} onAction={renderMatchAction} /> ) : (<div className="pb-4"><div className="flex justify-center p-3 bg-gray-50 border-b border-gray-100"><div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">{['A', 'B', 'C', 'D'].map((group) => (<button key={group} onClick={() => setActiveGroup(group)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeGroup === group ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-600'}`}>Group {group}</button>))}</div></div>
+        <div className="mt-8 mb-24 px-6"><div className="flex items-center gap-2 mb-4"><Activity className="text-green-500 animate-pulse" size={20}/><h2 className="text-lg font-black italic uppercase">Ongoing Event ({city})</h2></div><div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden"><div className="bg-blue-600 p-4 flex justify-between items-center text-white"><div><p className="text-[10px] font-bold opacity-80 uppercase">Tournament</p><h3 className="font-black text-lg italic">{category} <span className="text-sm font-black text-yellow-300 ml-1">({level ? level.toUpperCase() : "..."})</span></h3></div><div className="text-right"><p className="text-[10px] font-bold opacity-80 uppercase">My Rank</p><p className="font-black text-2xl">#{standings.findIndex(t => t.name.includes(myTeamID)) + 1 || "-"}</p></div></div><div className="flex border-b border-gray-100 divide-x divide-gray-100"><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Played</p><p className="font-black text-lg">{standings.find(t => t.name.includes(myTeamID))?.played || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Won</p><p className="font-black text-lg text-green-600">{standings.find(t => t.name.includes(myTeamID))?.gamesWon || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Points</p><p className="font-black text-lg text-blue-600">{standings.find(t => t.name.includes(myTeamID))?.points || 0}</p></div></div><div className="flex border-b border-gray-100"><button onClick={() => setActiveTab("SCHEDULE")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "SCHEDULE" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Schedule</button><button onClick={() => setActiveTab("STANDINGS")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "STANDINGS" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Leaderboard</button></div><div className="max-h-96 overflow-y-auto">{activeTab === "SCHEDULE" ? ( <CompactScheduleList matches={schedule} myTeamID={myTeamID} onAction={renderMatchAction} /> ) : (<div className="pb-4"><div className="flex justify-center p-3 bg-gray-50 border-b border-gray-100"><div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">{['A', 'B', 'C', 'D'].map((group) => (<button key={group} onClick={() => setActiveGroup(group)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeGroup === group ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-600'}`}>Group {group}</button>))}</div></div>
         <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 text-[9px] font-bold text-gray-400 uppercase"><div className="col-span-2 text-center">Rank</div><div className="col-span-4">Team</div><div className="col-span-2 text-center">Matches</div><div className="col-span-2 text-center">Games</div><div className="col-span-2 text-center">Pts</div></div>
-        <div className="divide-y divide-gray-50">{filteredStandings.length > 0 ? (filteredStandings.map((t, i) => (<div key={i} className={`grid grid-cols-12 gap-2 px-4 py-3 items-center ${i < 2 ? "bg-green-50 border-l-4 border-green-500" : (t.team_id === myTeamID ? "bg-blue-50" : "hover:bg-gray-50")}`}><div className="col-span-2 flex justify-center">{getRankIcon(i)}</div><div className="col-span-4 font-bold text-gray-700 text-xs truncate">{t.name}</div><div className="col-span-2 text-center text-gray-500 font-bold text-xs">{t.played}</div><div className="col-span-2 text-center text-green-600 font-bold text-xs">{t.totalGamePoints}</div><div className="col-span-2 text-center font-black text-blue-600 text-xs">{t.points}</div></div>))) : (<div className="p-6 text-center text-gray-400 text-xs">No teams in Group {activeGroup}</div>)}</div></div>)}</div></div> {selectedMatch && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm"><div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl"><h3 className="text-xl font-black italic uppercase mb-1 text-center">Match Result</h3><p className="text-xs text-gray-500 font-bold mb-6 text-center">{selectedMatch.t1} vs {selectedMatch.t2}</p><input type="text" placeholder="e.g. 6-4, 6-2" className="w-full bg-gray-100 p-4 rounded-xl font-bold text-lg mb-4 text-center outline-none" value={scoreInput} onChange={(e) => setScoreInput(e.target.value)}/><div className="flex gap-3"><button onClick={() => setSelectedMatch(null)} className="flex-1 bg-gray-200 text-gray-600 py-3 rounded-xl font-bold text-xs uppercase">Cancel</button><button onClick={handleScoreSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-xs uppercase shadow-lg">Submit</button></div></div></div>)}</div>
+        <div className="divide-y divide-gray-50">{filteredStandings.length > 0 ? (filteredStandings.map((t, i) => (<div key={i} className={`grid grid-cols-12 gap-2 px-4 py-3 items-center ${i < 2 ? "bg-green-50 border-l-4 border-green-500" : (t.name.includes(myTeamID) ? "bg-blue-50" : "hover:bg-gray-50")}`}><div className="col-span-2 flex justify-center">{getRankIcon(i)}</div><div className="col-span-4 font-bold text-gray-700 text-xs truncate">{t.name}</div><div className="col-span-2 text-center text-gray-500 font-bold text-xs">{t.played}</div><div className="col-span-2 text-center text-green-600 font-bold text-xs">{t.totalGamePoints}</div><div className="col-span-2 text-center font-black text-blue-600 text-xs">{t.points}</div></div>))) : (<div className="p-6 text-center text-gray-400 text-xs">No teams in Group {activeGroup}</div>)}</div></div>)}</div></div> {selectedMatch && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm"><div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl"><h3 className="text-xl font-black italic uppercase mb-1 text-center">Match Result</h3><p className="text-xs text-gray-500 font-bold mb-6 text-center">{selectedMatch.t1} vs {selectedMatch.t2}</p><input type="text" placeholder="e.g. 6-4, 6-2" className="w-full bg-gray-100 p-4 rounded-xl font-bold text-lg mb-4 text-center outline-none" value={scoreInput} onChange={(e) => setScoreInput(e.target.value)}/><div className="flex gap-3"><button onClick={() => setSelectedMatch(null)} className="flex-1 bg-gray-200 text-gray-600 py-3 rounded-xl font-bold text-xs uppercase">Cancel</button><button onClick={handleScoreSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-xs uppercase shadow-lg">Submit</button></div></div></div>)}</div>
     );
 };
 
+// ... (HomePage, ProfilePage, AppContent - all same logic as before) ...
 const HomePage = ({ user, onRefresh }) => {
   const navigate = useNavigate(); 
   const [availableTournaments, setAvailableTournaments] = useState([]);
@@ -287,8 +314,14 @@ const ProfilePage = ({ user, onLogout }) => {
 
     const handleSave = async () => { const res = await fetch('http://127.0.0.1:8000/user/update-profile', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, email: formData.email, gender: formData.gender, dob: formData.dob, play_location: formData.play_location }) }); if(res.ok) { alert("Profile Updated!"); setEditMode(false); window.location.reload(); } };
     const handleAddMoney = async () => { const amount = prompt("Enter amount to add (Simulated Razorpay):", "500"); if(!amount) return; const res = await fetch('http://127.0.0.1:8000/admin/add-wallet', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) }) }); if(res.ok) { alert(`₹${amount} added successfully! (Simulated)`); window.location.reload(); } };
+    
+    // --- COLOR HELPER ---
+    const getAmountColor = (t) => {
+        if (t.type === "CREDIT") return "text-green-600";
+        if (t.mode === "WITHDRAWAL") return "text-red-500";
+        return "text-pink-500"; // EVENT_FEE
+    };
 
-    // --- NEW: WITHDRAW FUNCTION ---
     const handleWithdraw = async () => {
         const amount = prompt("Enter amount to withdraw:", "500");
         if(!amount) return;
@@ -306,13 +339,6 @@ const ProfilePage = ({ user, onLogout }) => {
                 alert("Withdrawal Failed: " + data.detail);
             }
         } catch(e) { alert("Error connecting to server"); }
-    };
-
-    // --- COLOR LOGIC FOR TRANSACTIONS ---
-    const getAmountColor = (t) => {
-        if (t.type === "CREDIT") return "text-green-600";
-        if (t.mode === "WITHDRAWAL") return "text-red-500";
-        return "text-pink-500"; // EVENT_FEE
     };
 
     return (
