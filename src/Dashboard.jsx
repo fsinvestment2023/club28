@@ -40,7 +40,7 @@ const Dashboard = () => {
   const [newMatchDate, setNewMatchDate] = useState("");
   const [newMatchTime, setNewMatchTime] = useState("");
 
-  const API_URL = "https://club28-backend-98cy.onrender.com"; 
+  const API_URL = "http://127.0.0.1:8000"; 
 
   const handleLogin = () => { if (password === "admin123") { setIsAuthenticated(true); fetchTournaments(); } else { alert("Wrong Password"); } };
   

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Clock } from 'lucide-react';
+import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar } from 'lucide-react';
 import Dashboard from './Dashboard.jsx'; 
 
 // --- SHARED COMPONENTS ---
@@ -38,7 +38,10 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
 
 // --- AUTH PAGES ---
 const LoginPage = ({ onLogin }) => {
-  const [mode, setMode] = useState("LOGIN"); const [phone, setPhone] = useState(""); const [otp, setOtp] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [teamId, setTeamId] = useState(""); const [loading, setLoading] = useState(false); const API_URL = "https://club28-backend-98cy.onrender.com";
+  // --- LOCALHOST URL FOR DEV ---
+  const API_URL = "http://127.0.0.1:8000";
+  
+  const [mode, setMode] = useState("LOGIN"); const [phone, setPhone] = useState(""); const [otp, setOtp] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [teamId, setTeamId] = useState(""); const [loading, setLoading] = useState(false);
   const handleSendOtp = async (nextMode) => { if(phone.length < 10) return alert("Enter valid phone"); setLoading(true); try { await fetch(`${API_URL}/send-otp`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({phone})}); alert("OTP Sent: 1234"); setMode(nextMode); } catch(e) { alert("Server Error"); } setLoading(false); };
   const handleVerifyOtp = (nextMode) => { if(otp !== "1234") return alert("Wrong OTP (Hint: 1234)"); setMode(nextMode); };
   const handleRegister = async () => { if(!name || !password) return alert("Fill all fields"); setLoading(true); try { const res = await fetch(`${API_URL}/register`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, name, password }) }); const data = await res.json(); if(res.ok) { alert(`Registration Success! Team ID: ${data.user.team_id}`); setTeamId(data.user.team_id); setMode("LOGIN"); } else { alert(data.detail); } } catch(e) { alert("Registration Error"); } setLoading(false); };
@@ -59,13 +62,15 @@ const TournamentRegistration = ({ onRegister }) => {
     // NEW STATES
     const [schedule, setSchedule] = useState([]);
     
-    useEffect(() => { const loadData = async () => { const tRes = await fetch('https://club28-backend-98cy.onrender.com/tournaments'); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); try { setSchedule(JSON.parse(found.schedule || "[]")); } catch {} } }; loadData(); }, [id]);
+    // --- UPDATED URL TO LOCALHOST ---
+    useEffect(() => { const loadData = async () => { const tRes = await fetch('http://127.0.0.1:8000/tournaments'); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); try { setSchedule(JSON.parse(found.schedule || "[]")); } catch {} } }; loadData(); }, [id]);
     
     const handlePayment = async () => {
         setLoading(true); 
         const user = JSON.parse(localStorage.getItem("user"));
         try { 
-            const response = await fetch('https://club28-backend-98cy.onrender.com/join-tournament', { 
+            // --- UPDATED URL TO LOCALHOST ---
+            const response = await fetch('http://127.0.0.1:8000/join-tournament', { 
                 method: 'POST', 
                 headers: { 'Content-Type': 'application/json' }, 
                 body: JSON.stringify({ 
@@ -143,8 +148,9 @@ const CompetePage = () => {
 
     const navigate = useNavigate();
     
+    // --- UPDATED URL TO LOCALHOST ---
     useEffect(() => { 
-        fetch('https://club28-backend-98cy.onrender.com/tournaments')
+        fetch('http://127.0.0.1:8000/tournaments')
         .then(res => res.json())
         .then(data => {
             setTournaments(data);
@@ -230,10 +236,11 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
         try { 
             const safeLevel = level || "";
             const encodedLevel = encodeURIComponent(safeLevel);
+            // --- UPDATED URLs TO LOCALHOST ---
             const [schRes, scoreRes, rankRes] = await Promise.all([ 
-                fetch('https://club28-backend-98cy.onrender.com/generate-test-season'), 
-                fetch('https://club28-backend-98cy.onrender.com/scores'), 
-                fetch(`https://club28-backend-98cy.onrender.com/standings?tournament=${category}&city=${city}&level=${encodedLevel}`) 
+                fetch('http://127.0.0.1:8000/generate-test-season'), 
+                fetch('http://127.0.0.1:8000/scores'), 
+                fetch(`http://127.0.0.1:8000/standings?tournament=${category}&city=${city}&level=${encodedLevel}`) 
             ]); 
             const schData = await schRes.json(); 
             const scoreData = await scoreRes.json(); 
@@ -251,14 +258,16 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
     
     useEffect(() => { fetchData(); const interval = setInterval(fetchData, 10000); return () => clearInterval(interval); }, [category, city, level]);
     
-    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch('https://club28-backend-98cy.onrender.com/submit-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
-    const handleVerify = async (matchId, action) => { await fetch('https://club28-backend-98cy.onrender.com/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
+    // --- UPDATED URLs TO LOCALHOST ---
+    const handleScoreSubmit = async () => { if(!selectedMatch) return; await fetch('http://127.0.0.1:8000/submit-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: selectedMatch.id, category: category, t1_name: selectedMatch.t1, t2_name: selectedMatch.t2, score: scoreInput, submitted_by_team: myTeamID }) }); alert("Score sent!"); setSelectedMatch(null); setScoreInput(""); fetchData(); };
+    const handleVerify = async (matchId, action) => { await fetch('http://127.0.0.1:8000/verify-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ match_id: matchId, action: action }) }); alert(action); fetchData(); };
+    
     const filteredStandings = standings.filter(t => t.group === activeGroup).sort((a, b) => b.points - a.points);
     const getRankIcon = (index) => { if (index < 2) return <div className="bg-green-100 text-green-600 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">Q</div>; return <span className="font-bold text-gray-400 text-xs w-5 text-center">{index + 1}</span>; };
     const renderMatchAction = (match) => { const scoreEntry = scores[match.id]; if (!scoreEntry) return <button onClick={() => setSelectedMatch(match)} className="bg-blue-50 text-blue-600 text-[8px] font-bold px-2 py-1 rounded border border-blue-100">+ Score</button>; if (scoreEntry.status === "Official") return <span className="text-green-600 text-[9px] font-black">{scoreEntry.score}</span>; if (scoreEntry.status === "Disputed") return <span className="text-red-500 text-[9px] font-black">⚠</span>; const iSubmittedIt = scoreEntry.submitted_by_team === myTeamID; if (iSubmittedIt) return <span className="text-gray-300 text-[8px] font-bold">Wait...</span>; return <div className="flex gap-1"><button onClick={() => handleVerify(match.id, "DENY")} className="text-red-500 text-[8px] font-bold border border-red-100 px-1 rounded">X</button><button onClick={() => handleVerify(match.id, "APPROVE")} className="text-green-600 text-[8px] font-bold border border-green-100 px-1 rounded">✓</button></div>; };
     
     return (
-        <div className="mt-8 mb-24 px-6"><div className="flex items-center gap-2 mb-4"><Activity className="text-green-500 animate-pulse" size={20}/><h2 className="text-lg font-black italic uppercase">Ongoing Event ({city})</h2></div><div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden"><div className="bg-blue-600 p-4 flex justify-between items-center text-white"><div><p className="text-[10px] font-bold opacity-80 uppercase">Tournament</p><h3 className="font-black text-lg italic">{category} <span className="text-sm font-black text-yellow-300 ml-1">({level ? level.toUpperCase() : "..."})</span></h3></div><div className="text-right"><p className="text-[10px] font-bold opacity-80 uppercase">My Rank</p><p className="font-black text-2xl">#{standings.findIndex(t => t.name === myTeamID) + 1 || "-"}</p></div></div><div className="flex border-b border-gray-100 divide-x divide-gray-100"><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Played</p><p className="font-black text-lg">{standings.find(t => t.team_id === myTeamID)?.played || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Won</p><p className="font-black text-lg text-green-600">{standings.find(t => t.team_id === myTeamID)?.gamesWon || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Points</p><p className="font-black text-lg text-blue-600">{standings.find(t => t.team_id === myTeamID)?.points || 0}</p></div></div><div className="flex border-b border-gray-100"><button onClick={() => setActiveTab("SCHEDULE")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "SCHEDULE" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Schedule</button><button onClick={() => setActiveTab("STANDINGS")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "STANDINGS" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Leaderboard</button></div><div className="max-h-96 overflow-y-auto">{activeTab === "SCHEDULE" ? ( <CompactScheduleList matches={schedule} myTeamID={myTeamID} onAction={renderMatchAction} /> ) : (<div className="pb-4"><div className="flex justify-center p-3 bg-gray-50 border-b border-gray-100"><div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">{['A', 'B', 'C', 'D'].map((group) => (<button key={group} onClick={() => setActiveGroup(group)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeGroup === group ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-600'}`}>Group {group}</button>))}</div></div><div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 text-[9px] font-bold text-gray-400 uppercase"><div className="col-span-2 text-center">Rank</div><div className="col-span-6">Team</div><div className="col-span-2 text-center">Games</div><div className="col-span-2 text-center">Pts</div></div><div className="divide-y divide-gray-50">{filteredStandings.length > 0 ? (filteredStandings.map((t, i) => (<div key={i} className={`grid grid-cols-12 gap-2 px-4 py-3 items-center ${i < 2 ? "bg-green-50 border-l-4 border-green-500" : (t.team_id === myTeamID ? "bg-blue-50" : "hover:bg-gray-50")}`}><div className="col-span-2 flex justify-center">{getRankIcon(i)}</div><div className="col-span-6 font-bold text-gray-700 text-xs truncate">{t.name}</div><div className="col-span-2 text-center text-gray-500 font-bold text-xs">{t.gamesWon}</div><div className="col-span-2 text-center font-black text-blue-600 text-xs">{t.points}</div></div>))) : (<div className="p-6 text-center text-gray-400 text-xs">No teams in Group {activeGroup}</div>)}</div></div>)}</div></div> {selectedMatch && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm"><div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl"><h3 className="text-xl font-black italic uppercase mb-1 text-center">Match Result</h3><p className="text-xs text-gray-500 font-bold mb-6 text-center">{selectedMatch.t1} vs {selectedMatch.t2}</p><input type="text" placeholder="e.g. 6-4, 6-2" className="w-full bg-gray-100 p-4 rounded-xl font-bold text-lg mb-4 text-center outline-none" value={scoreInput} onChange={(e) => setScoreInput(e.target.value)}/><div className="flex gap-3"><button onClick={() => setSelectedMatch(null)} className="flex-1 bg-gray-200 text-gray-600 py-3 rounded-xl font-bold text-xs uppercase">Cancel</button><button onClick={handleScoreSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-xs uppercase shadow-lg">Submit</button></div></div></div>)}</div>
+        <div className="mt-8 mb-24 px-6"><div className="flex items-center gap-2 mb-4"><Activity className="text-green-500 animate-pulse" size={20}/><h2 className="text-lg font-black italic uppercase">Ongoing Event ({city})</h2></div><div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden"><div className="bg-blue-600 p-4 flex justify-between items-center text-white"><div><p className="text-[10px] font-bold opacity-80 uppercase">Tournament</p><h3 className="font-black text-lg italic">{category} <span className="text-sm font-black text-yellow-300 ml-1">({level ? level.toUpperCase() : "..."})</span></h3></div><div className="text-right"><p className="text-[10px] font-bold opacity-80 uppercase">My Rank</p><p className="font-black text-2xl">#{standings.findIndex(t => t.team_id === myTeamID) + 1 || "-"}</p></div></div><div className="flex border-b border-gray-100 divide-x divide-gray-100"><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Played</p><p className="font-black text-lg">{standings.find(t => t.team_id === myTeamID)?.played || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Won</p><p className="font-black text-lg text-green-600">{standings.find(t => t.team_id === myTeamID)?.gamesWon || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Points</p><p className="font-black text-lg text-blue-600">{standings.find(t => t.team_id === myTeamID)?.points || 0}</p></div></div><div className="flex border-b border-gray-100"><button onClick={() => setActiveTab("SCHEDULE")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "SCHEDULE" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Schedule</button><button onClick={() => setActiveTab("STANDINGS")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "STANDINGS" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Leaderboard</button></div><div className="max-h-96 overflow-y-auto">{activeTab === "SCHEDULE" ? ( <CompactScheduleList matches={schedule} myTeamID={myTeamID} onAction={renderMatchAction} /> ) : (<div className="pb-4"><div className="flex justify-center p-3 bg-gray-50 border-b border-gray-100"><div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">{['A', 'B', 'C', 'D'].map((group) => (<button key={group} onClick={() => setActiveGroup(group)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeGroup === group ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-600'}`}>Group {group}</button>))}</div></div><div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 text-[9px] font-bold text-gray-400 uppercase"><div className="col-span-2 text-center">Rank</div><div className="col-span-6">Team</div><div className="col-span-2 text-center">Games</div><div className="col-span-2 text-center">Pts</div></div><div className="divide-y divide-gray-50">{filteredStandings.length > 0 ? (filteredStandings.map((t, i) => (<div key={i} className={`grid grid-cols-12 gap-2 px-4 py-3 items-center ${i < 2 ? "bg-green-50 border-l-4 border-green-500" : (t.team_id === myTeamID ? "bg-blue-50" : "hover:bg-gray-50")}`}><div className="col-span-2 flex justify-center">{getRankIcon(i)}</div><div className="col-span-6 font-bold text-gray-700 text-xs truncate">{t.name}</div><div className="col-span-2 text-center text-gray-500 font-bold text-xs">{t.gamesWon}</div><div className="col-span-2 text-center font-black text-blue-600 text-xs">{t.points}</div></div>))) : (<div className="p-6 text-center text-gray-400 text-xs">No teams in Group {activeGroup}</div>)}</div></div>)}</div></div> {selectedMatch && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm"><div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl"><h3 className="text-xl font-black italic uppercase mb-1 text-center">Match Result</h3><p className="text-xs text-gray-500 font-bold mb-6 text-center">{selectedMatch.t1} vs {selectedMatch.t2}</p><input type="text" placeholder="e.g. 6-4, 6-2" className="w-full bg-gray-100 p-4 rounded-xl font-bold text-lg mb-4 text-center outline-none" value={scoreInput} onChange={(e) => setScoreInput(e.target.value)}/><div className="flex gap-3"><button onClick={() => setSelectedMatch(null)} className="flex-1 bg-gray-200 text-gray-600 py-3 rounded-xl font-bold text-xs uppercase">Cancel</button><button onClick={handleScoreSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-xs uppercase shadow-lg">Submit</button></div></div></div>)}</div>
     );
 };
 
@@ -276,12 +285,14 @@ const HomePage = ({ user, onRefresh }) => {
   }, [user]);
 
   useEffect(() => { 
-      fetch('https://club28-backend-98cy.onrender.com/tournaments').then(res => res.json()).then(data => setAvailableTournaments(data)); 
+      // --- UPDATED URL TO LOCALHOST ---
+      fetch('http://127.0.0.1:8000/tournaments').then(res => res.json()).then(data => setAvailableTournaments(data)); 
       
       const refreshUser = async () => {
           if (!user?.team_id) return;
           try {
-              const res = await fetch(`https://club28-backend-98cy.onrender.com/user/${user.team_id}`);
+              // --- UPDATED URL TO LOCALHOST ---
+              const res = await fetch(`http://127.0.0.1:8000/user/${user.team_id}`);
               if (res.ok) {
                   const latestUser = await res.json();
                   onRefresh(latestUser); 
