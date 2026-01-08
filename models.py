@@ -11,29 +11,31 @@ class User(Base):
     password = Column(String)
     team_id = Column(String, unique=True)
     wallet_balance = Column(Integer, default=0)
-    
-    # --- PROFILE FIELDS ---
     email = Column(String, default="")
     gender = Column(String, default="")
     dob = Column(String, default="")
     play_location = Column(String, default="") 
-    
-    # --- NEW: REGISTRATION DATE ---
     registration_date = Column(DateTime(timezone=True), server_default=func.now()) 
-    # ------------------------------
-
-    registrations = relationship("Registration", back_populates="user")
+    
+    registrations = relationship("Registration", back_populates="user", foreign_keys="Registration.user_id")
 
 class Registration(Base):
     __tablename__ = "registrations"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
+    
+    # --- NEW DOUBLES FIELDS ---
+    partner_id = Column(Integer, nullable=True) # ID of the partner
+    status = Column(String, default="Confirmed") # 'Confirmed' or 'Pending_Payment'
+    # --------------------------
+
     tournament_name = Column(String)
     city = Column(String)
     sport = Column(String)
     category = Column(String)
     group_id = Column(String)
-    user = relationship("User", back_populates="registrations")
+    
+    user = relationship("User", back_populates="registrations", foreign_keys=[user_id])
 
 class Tournament(Base):
     __tablename__ = "tournaments"
@@ -41,6 +43,11 @@ class Tournament(Base):
     name = Column(String)
     city = Column(String, default="Mumbai")
     sport = Column(String, default="Padel")
+    
+    # --- NEW FORMAT FIELD ---
+    format = Column(String, default="Singles") # 'Singles' or 'Doubles'
+    # ------------------------
+
     type = Column(String) 
     fee = Column(String) 
     prize = Column(String) 
