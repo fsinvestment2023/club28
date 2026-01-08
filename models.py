@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from database import Base
 
 class User(Base):
@@ -10,6 +11,17 @@ class User(Base):
     password = Column(String)
     team_id = Column(String, unique=True)
     wallet_balance = Column(Integer, default=0)
+    
+    # --- PROFILE FIELDS ---
+    email = Column(String, default="")
+    gender = Column(String, default="")
+    dob = Column(String, default="")
+    play_location = Column(String, default="") 
+    
+    # --- NEW: REGISTRATION DATE ---
+    registration_date = Column(DateTime(timezone=True), server_default=func.now()) 
+    # ------------------------------
+
     registrations = relationship("Registration", back_populates="user")
 
 class Registration(Base):
@@ -33,12 +45,8 @@ class Tournament(Base):
     fee = Column(String) 
     prize = Column(String) 
     status = Column(String)
-    
-    # --- NEW COLUMNS ---
     venue = Column(String, default="") 
-    schedule = Column(String, default="[]") # Stores JSON string of schedule rows
-    # -------------------
-
+    schedule = Column(String, default="[]")
     settings = Column(String, default="[]")
     draw_size = Column(Integer, default=16)
 
