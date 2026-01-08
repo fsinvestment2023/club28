@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter, FileText } from 'lucide-react';
 
 const Dashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -7,11 +7,7 @@ const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("TOURNAMENTS"); 
   const [selectedTournament, setSelectedTournament] = useState(null);
   const [activeLevelTab, setActiveLevelTab] = useState(null); 
-  
-  // VIEW MODE STATE (MATCHES vs LEADERBOARD)
   const [viewMode, setViewMode] = useState("MATCHES");
-  
-  // LEADERBOARD GROUP FILTER
   const [leaderboardGroup, setLeaderboardGroup] = useState("ALL");
 
   const [tournaments, setTournaments] = useState([]);
@@ -19,6 +15,7 @@ const Dashboard = () => {
   const [players, setPlayers] = useState([]);
   const [tournamentPlayers, setTournamentPlayers] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]); 
+  const [transactions, setTransactions] = useState([]);
   const [walletTeamId, setWalletTeamId] = useState("");
   const [walletAmount, setWalletAmount] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,7 +25,7 @@ const Dashboard = () => {
   const [eventName, setEventName] = useState("");
   const [eventCity, setEventCity] = useState("MUMBAI"); 
   const [eventSport, setEventSport] = useState("Padel"); 
-  const [eventFormat, setEventFormat] = useState("Singles"); // <--- FORMAT STATE
+  const [eventFormat, setEventFormat] = useState("Singles");
   const [eventType, setEventType] = useState("League");
   const [eventStatus, setEventStatus] = useState("Open");
   const [categories, setCategories] = useState([{ name: "Advance", fee: 2500, p1: 30000, p2: 15000, p3: 5000 }]);
@@ -36,11 +33,9 @@ const Dashboard = () => {
   const [eventVenue, setEventVenue] = useState("");
   const [eventSchedule, setEventSchedule] = useState([{ label: "", value: "" }]);
 
-  // Manual Register States
   const [manualName, setManualName] = useState("");
   const [manualPhone, setManualPhone] = useState("");
 
-  // Add Match States
   const [newMatchT1, setNewMatchT1] = useState("");
   const [newMatchT2, setNewMatchT2] = useState("");
   const [newMatchDate, setNewMatchDate] = useState("");
@@ -62,6 +57,8 @@ const Dashboard = () => {
   };
   
   const fetchPlayers = async () => { try { const res = await fetch(`${API_URL}/admin/players`); setPlayers(await res.json()); } catch(e){} };
+  
+  const fetchTransactions = async () => { try { const res = await fetch(`${API_URL}/admin/transactions`); setTransactions(await res.json()); } catch(e){} };
   
   const fetchTournamentPlayers = async () => { 
       if(!selectedTournament) return; 
@@ -89,6 +86,7 @@ const Dashboard = () => {
   useEffect(() => { 
       if(isAuthenticated) { 
           if (activeTab === "PLAYERS") fetchPlayers(); 
+          else if (activeTab === "ACCOUNTS") fetchTransactions();
           else if (activeTab === "MANAGE" && selectedTournament) { fetchMatches(); fetchTournamentPlayers(); fetchLeaderboard(); } else { fetchMatches(); } 
       } 
   }, [selectedTournament, isAuthenticated, activeTab, viewMode, activeLevelTab]); 
@@ -101,25 +99,14 @@ const Dashboard = () => {
   const handleAddMoney = async () => { if (!walletTeamId || !walletAmount) return alert("Fill fields"); const res = await fetch(`${API_URL}/admin/add-wallet`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: walletTeamId, amount: parseInt(walletAmount) }) }); if (res.ok) { alert("Money Added!"); setWalletTeamId(""); setWalletAmount(""); fetchPlayers(); } else { alert("Player Not Found"); } };
   const handleDeleteTournament = async (id) => { if(!window.confirm("Delete this event?")) return; await fetch(`${API_URL}/admin/delete-tournament`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchTournaments(); if(selectedTournament?.id === id) setSelectedTournament(null); };
   
-  const openCreateModal = () => { 
-      setEditingId(null); setEventName(""); setEventCity("MUMBAI"); setEventSport("Padel"); setEventFormat("Singles"); setEventType("League"); setEventStatus("Open"); setDrawSize(16); setEventVenue(""); setEventSchedule([{ label: "", value: "" }]); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); setIsModalOpen(true); 
-  };
-  
-  const openEditModal = (t) => { 
-      setEditingId(t.id); setEventName(t.name); setEventCity(t.city || "MUMBAI"); setEventSport(t.sport || "Padel"); setEventFormat(t.format || "Singles"); setEventType(t.type); setEventStatus(t.status); setDrawSize(t.draw_size || 16); setEventVenue(t.venue || ""); 
-      try { setEventSchedule(JSON.parse(t.schedule || "[]")); } catch { setEventSchedule([{ label: "", value: "" }]); } 
-      try { setCategories(JSON.parse(t.settings || "[]")); } catch { setCategories([{ name: "Default", fee: t.fee, p1: 0, p2: 0, p3: 0 }]); } 
-      setIsModalOpen(true); 
-  };
+  const openCreateModal = () => { setEditingId(null); setEventName(""); setEventCity("MUMBAI"); setEventSport("Padel"); setEventFormat("Singles"); setEventType("League"); setEventStatus("Open"); setDrawSize(16); setEventVenue(""); setEventSchedule([{ label: "", value: "" }]); setCategories([{ name: "", fee: 0, p1: 0, p2: 0, p3: 0 }]); setIsModalOpen(true); };
+  const openEditModal = (t) => { setEditingId(t.id); setEventName(t.name); setEventCity(t.city || "MUMBAI"); setEventSport(t.sport || "Padel"); setEventFormat(t.format || "Singles"); setEventType(t.type); setEventStatus(t.status); setDrawSize(t.draw_size || 16); setEventVenue(t.venue || ""); try { setEventSchedule(JSON.parse(t.schedule || "[]")); } catch { setEventSchedule([{ label: "", value: "" }]); } try { setCategories(JSON.parse(t.settings || "[]")); } catch { setCategories([{ name: "Default", fee: t.fee, p1: 0, p2: 0, p3: 0 }]); } setIsModalOpen(true); };
   
   const handleModalSubmit = async () => { 
       if(!eventName) return alert("Enter Name"); 
       const endpoint = editingId ? '/admin/edit-tournament' : '/admin/create-tournament'; 
-      const body = { 
-          id: editingId, name: eventName, city: eventCity, sport: eventSport, format: eventFormat, type: eventType, status: eventStatus, settings: categories, venue: eventVenue, schedule: eventSchedule, draw_size: parseInt(drawSize) 
-      }; 
-      await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); 
-      setIsModalOpen(false); fetchTournaments(); 
+      const body = { id: editingId, name: eventName, city: eventCity, sport: eventSport, format: eventFormat, type: eventType, status: eventStatus, settings: categories, venue: eventVenue, schedule: eventSchedule, draw_size: parseInt(drawSize) }; 
+      await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); setIsModalOpen(false); fetchTournaments(); 
   };
   
   const updateCategory = (idx, f, v) => { const n = [...categories]; n[idx][f] = v; setCategories(n); };
@@ -147,7 +134,6 @@ const Dashboard = () => {
   };
   
   const handleMatchUpdate = async (id) => { const t1 = document.getElementById(`t1-${id}`).value; const t2 = document.getElementById(`t2-${id}`).value; const date = document.getElementById(`date-${id}`).value; const time = document.getElementById(`time-${id}`).value; const score = document.getElementById(`score-${id}`).value; await fetch(`${API_URL}/admin/edit-match-full`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id, t1, t2, date, time, score }) }); alert("Match Updated"); fetchMatches(); fetchLeaderboard(); };
-  
   const handleDeleteMatch = async (id) => { if(!window.confirm("Delete this match?")) return; await fetch(`${API_URL}/admin/delete-match`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchMatches(); };
 
   if (!isAuthenticated) return ( <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center"><h1 className="text-2xl font-black mb-4">ADMIN ACCESS</h1><input type="password" placeholder="Pass" className="w-full bg-gray-100 p-4 rounded-xl mb-4 font-bold text-center" value={password} onChange={e=>setPassword(e.target.value)}/><button onClick={handleLogin} className="w-full bg-black text-white p-4 rounded-xl font-bold">UNLOCK</button></div></div> );
@@ -155,34 +141,11 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex flex-col md:flex-row relative">
       
-      {/* --- MODAL (Creating New Event) --- */}
+      {/* --- MODAL --- */}
       {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-      
-      <div className="grid grid-cols-3 gap-4">
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
-        <div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
-        <div>
-            <label className="text-xs font-bold text-gray-400 uppercase">Sport</label>
-            <select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200">
-                <option value="Padel">Padel</option>
-                <option value="Pickleball">Pickleball</option>
-                <option value="Tennis">Tennis</option>
-                <option value="Badminton">Badminton</option>
-                <option value="Box Cricket">Box Cricket</option>
-                <option value="Football">Football</option>
-            </select>
-        </div>
-      </div>
-
-      {/* --- RESTORED: FORMAT, STATUS, DRAW SIZE --- */}
-      <div className="grid grid-cols-3 gap-4">
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div>
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div>
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value={8}>8 Players</option><option value={12}>12 Players</option><option value={16}>16 Players</option></select></div>
-      </div>
-      
-      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label (e.g. Week 1)" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value (e.g. Mon, Wed, Fri)" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div>
-
+      <div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">Sport</label><select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Padel">Padel</option><option value="Pickleball">Pickleball</option><option value="Tennis">Tennis</option><option value="Badminton">Badminton</option><option value="Box Cricket">Box Cricket</option><option value="Football">Football</option></select></div></div>
+      <div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value={8}>8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div></div>
+      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div>
       <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Venue Information</label><textarea value={eventVenue} onChange={e => setEventVenue(e.target.value)} placeholder="Enter full address, landmarks, or google maps link..." className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200 text-sm h-20 resize-none"/></div><div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Categories, Fees & Prizes</label><div className="space-y-2">{categories.map((cat, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Name" value={cat.name} onChange={e => updateCategory(idx, 'name', e.target.value)} className="w-40 p-2 bg-gray-50 rounded border text-xs font-bold"/><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Fee</span><input type="number" value={cat.fee} onChange={e => updateCategory(idx, 'fee', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">1st</span><input type="number" value={cat.p1} onChange={e => updateCategory(idx, 'p1', e.target.value)} className="w-24 p-2 bg-green-50 rounded border border-green-200 text-xs font-bold text-green-700"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">2nd</span><input type="number" value={cat.p2} onChange={e => updateCategory(idx, 'p2', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">3rd</span><input type="number" value={cat.p3} onChange={e => updateCategory(idx, 'p3', e.target.value)} className="w-24 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><button onClick={() => removeCategory(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded mt-3"><Trash2 size={16}/></button></div>))}</div><button onClick={addCategoryRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1"><Plus size={14}/> Add Category</button></div><button onClick={handleModalSubmit} className="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">{editingId ? "Save Changes" : "Create Event"}</button></div></div></div>)}
 
       {/* --- SIDEBAR --- */}
@@ -191,6 +154,8 @@ const Dashboard = () => {
         <div className="space-y-1">
             <button onClick={() => {setActiveTab("TOURNAMENTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "TOURNAMENTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Events</button>
             <button onClick={() => {setActiveTab("PLAYERS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "PLAYERS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Players & Wallet</button>
+            <button onClick={() => {setActiveTab("ACCOUNTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "ACCOUNTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Accounts</button>
+            
             <div className="px-4 py-2 text-xs font-bold text-gray-400 uppercase mt-4">Active Events</div>
             {tournaments.map(t => ( <button key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className={`w-full text-left px-4 py-2 rounded-lg font-medium text-sm ${selectedTournament?.id === t.id ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{t.name}</button> ))}
             <button onClick={openCreateModal} className="w-full mt-4 border border-dashed border-gray-300 p-2 rounded-lg text-xs font-bold text-gray-400 hover:text-blue-600 hover:border-blue-600">+ Create New Event</button>
@@ -201,23 +166,60 @@ const Dashboard = () => {
         {activeTab === "TOURNAMENTS" && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {tournaments.map(t => (
-                    <div key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-pointer relative group">
-                        <div className="absolute top-4 right-4 flex gap-2 z-10"><button onClick={(e) => { e.stopPropagation(); handleDeleteTournament(t.id); }} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 hover:text-red-700"><Trash2 size={16}/></button><button onClick={(e) => { e.stopPropagation(); openEditModal(t); }} className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-blue-100 hover:text-blue-600"><Edit2 size={16}/></button></div>
-                        <div className="flex justify-between items-start mb-4"><span className="bg-blue-100 text-blue-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.type}</span><span className="bg-purple-100 text-purple-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.format || "Singles"}</span></div>
-                        <h3 className="font-bold text-xl text-gray-800 mb-1">{t.name}</h3>
-                        <div className="flex items-center gap-3 text-xs font-bold text-gray-400 mb-4">
-                            <span className="flex items-center gap-1"><MapPin size={12}/> {t.city || "MUMBAI"}</span>
-                            <span className="flex items-center gap-1"><Activity size={12}/> {t.sport || "Padel"}</span>
+                    <div key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-pointer relative group flex flex-col justify-between">
+                        <div>
+                            <div className="flex justify-between items-start mb-4"><span className="bg-blue-100 text-blue-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.type}</span><span className="bg-purple-100 text-purple-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.format || "Singles"}</span></div>
+                            <h3 className="font-bold text-xl text-gray-800 mb-1">{t.name}</h3>
+                            <div className="flex items-center gap-3 text-xs font-bold text-gray-400 mb-4">
+                                <span className="flex items-center gap-1"><MapPin size={12}/> {t.city || "MUMBAI"}</span>
+                                <span className="flex items-center gap-1"><Activity size={12}/> {t.sport || "Padel"}</span>
+                            </div>
+                            <div className="flex gap-4 text-sm text-gray-500 mt-4 border-t border-gray-50 pt-4 mb-4">
+                                <div><span className="block text-[10px] font-bold uppercase text-gray-300">Fee Starts</span>₹{t.fee}</div>
+                                <div><span className="block text-[10px] font-bold uppercase text-gray-300">Draw Size</span>{t.draw_size || 16}</div>
+                            </div>
                         </div>
-                        <div className="flex gap-4 text-sm text-gray-500 mt-4 border-t border-gray-50 pt-4">
-                            <div><span className="block text-[10px] font-bold uppercase text-gray-300">Fee Starts</span>₹{t.fee}</div>
-                            <div><span className="block text-[10px] font-bold uppercase text-gray-300">Draw Size</span>{t.draw_size || 16}</div>
+                        {/* BOTTOM ACTION BAR - NO OVERLAP */}
+                        <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
+                            <button onClick={(e) => { e.stopPropagation(); openEditModal(t); }} className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-blue-100 hover:text-blue-600"><Edit2 size={16}/></button>
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteTournament(t.id); }} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 hover:text-red-700"><Trash2 size={16}/></button>
                         </div>
                     </div>
                 ))}
             </div>
         )}
         
+        {activeTab === "ACCOUNTS" && (
+            <div>
+                <h2 className="text-3xl font-black text-gray-800 mb-6">Accounts & Transactions</h2>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold">
+                    <tr>
+                      <th className="p-4">Date</th>
+                      <th className="p-4">Player</th>
+                      <th className="p-4">Description</th>
+                      <th className="p-4 text-right">Added (Credit)</th>
+                      <th className="p-4 text-right">Withdrawn (Debit)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {transactions.map(t => (
+                      <tr key={t.id} className="hover:bg-gray-50">
+                        <td className="p-4 text-xs font-bold text-gray-500">{new Date(t.date).toLocaleDateString()} {new Date(t.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                        <td className="p-4 font-bold text-gray-800">{t.user_name} <span className="text-gray-400 text-[10px]">({t.team_id})</span><br/><span className="text-[10px] text-gray-400">{t.user_phone}</span></td>
+                        <td className="p-4 text-xs font-bold text-gray-600">{t.description} <span className="bg-gray-100 px-2 py-0.5 rounded text-[9px] uppercase ml-1">{t.mode}</span></td>
+                        <td className="p-4 text-right font-black text-green-600">{t.type === "CREDIT" ? `+₹${t.amount}` : "-"}</td>
+                        <td className="p-4 text-right font-black text-red-500">{t.type === "DEBIT" ? `-₹${t.amount}` : "-"}</td>
+                      </tr>
+                    ))}
+                    {transactions.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-gray-400 text-xs font-bold">No transactions found.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+        )}
+
         {activeTab === "PLAYERS" && (
             <div><h2 className="text-3xl font-black text-gray-800 mb-6">Player Management</h2><div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8 max-w-xl"><h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Wallet size={18}/> Quick Top-Up</h3><div className="flex gap-4"><input value={walletTeamId} onChange={e => setWalletTeamId(e.target.value)} placeholder="Team ID (e.g. SA99)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/2"/><input value={walletAmount} onChange={e => setWalletAmount(e.target.value)} type="number" placeholder="Amount (₹)" className="p-3 bg-gray-50 rounded-lg border font-bold text-sm w-1/3"/><button onClick={handleAddMoney} className="bg-green-600 text-white font-bold px-6 rounded-lg hover:bg-green-700">ADD</button></div></div><div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Name</th><th className="p-4">Contact & Info</th><th className="p-4">Registered On</th><th className="p-4">Team ID</th><th className="p-4">Wallet Balance</th></tr></thead><tbody className="divide-y divide-gray-50">{players.map(p => (<tr key={p.id} className="hover:bg-gray-50"><td className="p-4 font-bold text-gray-800">{p.name}</td><td className="p-4"><p className="font-bold text-gray-700">{p.phone}</p><p className="text-[10px] text-gray-400">{p.email || "No Email"}</p><p className="text-[10px] text-blue-500 uppercase font-bold mt-1">{p.gender} • {p.dob || "-"}</p></td><td className="p-4 text-xs font-bold text-gray-500">{p.registration_date ? new Date(p.registration_date).toLocaleDateString() : "-"}</td><td className="p-4"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded font-black text-xs">{p.team_id}</span></td><td className="p-4 font-black text-green-600">₹{p.wallet_balance}</td></tr>))}</tbody></table></div></div>
         )}
