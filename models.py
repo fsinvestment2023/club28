@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship
 from database import Base
 
 class User(Base):
@@ -6,12 +7,22 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     phone = Column(String, unique=True, index=True)
     name = Column(String)
-    password = Column(String) # NEW: Stores password
+    password = Column(String)
     team_id = Column(String, unique=True)
-    group_id = Column(String, default="A") 
     wallet_balance = Column(Integer, default=0)
-    active_category = Column(String, default=None)
-    active_level = Column(String, default=None)
+    
+    # Relationship to registrations
+    registrations = relationship("Registration", back_populates="user")
+
+class Registration(Base):
+    __tablename__ = "registrations"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    tournament_name = Column(String) # e.g. "Padel"
+    category = Column(String)        # e.g. "Advance"
+    group_id = Column(String)        # e.g. "A"
+    
+    user = relationship("User", back_populates="registrations")
 
 class Tournament(Base):
     __tablename__ = "tournaments"
@@ -22,6 +33,7 @@ class Tournament(Base):
     prize = Column(String) 
     status = Column(String)
     settings = Column(String, default="[]")
+    draw_size = Column(Integer, default=16)
 
 class Match(Base):
     __tablename__ = "matches"
