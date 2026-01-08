@@ -13,7 +13,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://club28.onrender.com",   # Your Frontend Website
+        "http://localhost:5173",         # For your local testing
+        "*"                              # Safety net
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
