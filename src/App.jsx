@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard, AlertCircle, RefreshCw, ArrowUpRight } from 'lucide-react';
+import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard, AlertCircle, RefreshCw, ArrowUpRight, Info } from 'lucide-react';
 import Dashboard from './Dashboard.jsx'; 
 
 // --- SHARED COMPONENTS ---
@@ -17,9 +17,22 @@ const BottomNav = () => {
   );
 };
 
+// --- UPDATED SCHEDULE COMPONENT (Fixed Layout) ---
 const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
     if (matches.length === 0) return <div className="p-8 text-center text-xs text-gray-400">No matches found.</div>;
+    
+    // Helper for systematic colors
+    const getStageStyle = (stage) => {
+        const s = (stage || "").toLowerCase();
+        if (s.includes("final") && !s.includes("semi") && !s.includes("quarter")) return "bg-yellow-100 text-yellow-800 border-yellow-200"; // Finals
+        if (s.includes("semi")) return "bg-purple-100 text-purple-700 border-purple-200";
+        if (s.includes("quarter")) return "bg-blue-100 text-blue-700 border-blue-200";
+        if (s.includes("3rd")) return "bg-orange-100 text-orange-800 border-orange-200";
+        return "bg-gray-100 text-gray-500 border-gray-200"; // Group Stage
+    };
+
     const byDate = matches.reduce((acc, m) => { if (!acc[m.date]) acc[m.date] = []; acc[m.date].push(m); return acc; }, {});
+    
     return (
         <div className="divide-y divide-gray-100">
             {Object.entries(byDate).map(([date, dayMatches]) => {
@@ -29,23 +42,37 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
                         <div className="bg-gray-50 px-4 py-2 border-y border-gray-100 flex justify-between items-center"><span className="font-black text-xs text-gray-800 uppercase">{new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span><span className="text-[9px] font-bold text-gray-400">{dayMatches.length} Games</span></div>
                         <div className="divide-y divide-gray-50">{Object.entries(byTime).map(([time, timeMatches], idx) => (
                                 <div key={idx} className="flex p-3 hover:bg-blue-50 transition-colors">
-                                    <div className="w-14 pr-2 border-r border-gray-100 flex flex-col justify-center"><span className="text-xs font-black text-gray-900">{time.replace(":00 ", "")}</span><span className="text-[8px] font-bold text-gray-400 uppercase">{time.slice(-2)}</span></div>
-                                    <div className="flex-1 grid grid-cols-1 gap-2 pl-3">{timeMatches.map((m, mIdx) => (
-                                            <div key={mIdx} className="flex items-center justify-between">
-                                                <div className="text-xs w-full">
-                                                    {m.t1 === "TBD" ? (
-                                                        <div className="flex items-center gap-2"><span className="bg-gray-100 text-gray-500 text-[9px] font-bold px-2 py-0.5 rounded uppercase">{m.stage}</span><span className="text-[9px] text-gray-400 italic">{m.group}</span></div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-1">
-                                                            {/* Show Stage Badge if not Group Stage */}
-                                                            {m.stage !== "Group Stage" && <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mr-1">{m.stage}</span>}
-                                                            <span className={m.t1.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t1}</span>
-                                                            <span className="text-[9px] text-gray-300 px-1">vs</span>
-                                                            <span className={m.t2.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t2}</span>
-                                                        </div>
-                                                    )}
+                                    {/* Time Column: Fixed width, never shrinks */}
+                                    <div className="w-10 pr-2 border-r border-gray-100 flex flex-col justify-center flex-shrink-0"><span className="text-xs font-black text-gray-900">{time.replace(":00 ", "")}</span><span className="text-[8px] font-bold text-gray-400 uppercase">{time.slice(-2)}</span></div>
+                                    
+                                    {/* Content Column: Grows but allowed to shrink (min-w-0) */}
+                                    <div className="flex-1 grid grid-cols-1 gap-2 pl-3 min-w-0">{timeMatches.map((m, mIdx) => (
+                                            <div key={mIdx} className="flex items-center justify-between w-full gap-2">
+                                                <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
+                                                    
+                                                    {/* STAGE LABEL: Fixed width, never shrinks */}
+                                                    <div className="flex-shrink-0">
+                                                        <span className={`text-[6px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wide ${getStageStyle(m.stage)}`}>
+                                                            {m.stage === "Group Stage" ? "GRP" : m.stage.substring(0, 4)}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* TEAMS: Allowed to truncate */}
+                                                    <div className="text-xs flex-1 truncate">
+                                                        {m.t1 === "TBD" ? (
+                                                            <div className="text-[9px] text-gray-400 italic font-bold">Waiting...</div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1 truncate">
+                                                                <span className={`truncate ${m.t1.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}`}>{m.t1}</span>
+                                                                <span className="text-[8px] text-gray-300 font-bold flex-shrink-0">vs</span>
+                                                                <span className={`truncate ${m.t2.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}`}>{m.t2}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                {onAction && m.t1 !== "TBD" && onAction(m)}
+                                                
+                                                {/* ACTION BUTTONS: Fixed width, never shrinks */}
+                                                {onAction && m.t1 !== "TBD" && <div className="flex-shrink-0 ml-1">{onAction(m)}</div>}
                                             </div>))}</div></div>))}</div></div>);})
             }</div>
     );
@@ -125,12 +152,12 @@ const TournamentRegistration = ({ onRegister }) => {
 
     if (!tournament || !selectedCat) return <div className="p-10 text-center text-gray-500">Loading Event...</div>;
     
-    // --- UPDATED: DISPLAY ALL PRIZES INCLUDING MATCH WIN ---
+    // UPDATED: Changed label to "Per Match Win"
     const prizes = [ 
         { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, 
         { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, 
         { rank: '3rd', amount: selectedCat.p3, icon: '🥉' },
-        { rank: 'Match Win', amount: selectedCat.per_match || 0, icon: '💰' } // New Row
+        { rank: 'Per Match Win', amount: selectedCat.per_match || 0, icon: '💰' } 
     ];
     
     const perPersonFee = selectedCat.fee;
@@ -141,6 +168,15 @@ const TournamentRegistration = ({ onRegister }) => {
         <div className="bg-white min-h-screen pb-40"><div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg"><button onClick={() => navigate('/compete')} className="mb-6 bg-white/20 p-2 rounded-full"><ArrowLeft size={24}/></button><h1 className="text-3xl font-black italic uppercase mb-2">{tournament.name}</h1><p className="text-blue-100 font-bold text-xs uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> {tournament.city} • {tournament.sport} <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] ml-2">{tournament.format || "Singles"}</span></p></div>
         
         <div className="p-6 -mt-8">
+            
+            {/* UPDATED: Added About Event Section */}
+            {tournament.about && (
+                <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
+                    <div className="flex items-center gap-2 mb-4"><Info className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">About Event</h3></div>
+                    <p className="text-sm text-gray-600 leading-relaxed font-medium">{tournament.about}</p>
+                </div>
+            )}
+
             <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6"><h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3><div className="space-y-3">{categories.map((cat, idx) => (<button key={idx} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat.name === cat.name ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}><div className="text-left"><span className="font-bold text-sm block">{cat.name}</span><span className="text-[10px] font-bold opacity-70">Per Person: ₹{cat.fee}</span></div>{selectedCat.name === cat.name && <CheckCircle size={18}/>}</button>))}</div></div>
             
             {isDoubles && (

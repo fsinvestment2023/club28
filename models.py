@@ -26,8 +26,8 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Integer)
-    type = Column(String) # "CREDIT" (Added) or "DEBIT" (Withdrawn/Spent)
-    mode = Column(String) # "WALLET_TOPUP", "EVENT_FEE", "DIRECT_PAYMENT"
+    type = Column(String) # "CREDIT" or "DEBIT"
+    mode = Column(String) # "WALLET_TOPUP", "EVENT_FEE", "DIRECT_PAYMENT", "PRIZE", "WITHDRAWAL"
     description = Column(String)
     date = Column(DateTime(timezone=True), server_default=func.now())
     
@@ -58,6 +58,7 @@ class Tournament(Base):
     prize = Column(String) 
     status = Column(String)
     venue = Column(String, default="") 
+    about = Column(String, default="") 
     schedule = Column(String, default="[]")
     settings = Column(String, default="[]")
     draw_size = Column(Integer, default=16)

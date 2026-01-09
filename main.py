@@ -51,8 +51,8 @@ class WalletUpdate(BaseModel): team_id: str; amount: int
 class JoinRequest(BaseModel): 
     phone: str; tournament_name: str; city: str; sport: str; level: str; 
     partner_team_id: str = ""; payment_mode: str = "WALLET"; payment_scope: str = "INDIVIDUAL"
-class TournamentCreate(BaseModel): name: str; city: str; sport: str; format: str; type: str; status: str = "Open"; settings: list; draw_size: int = 16; venue: str = ""; schedule: list = []
-class TournamentUpdate(BaseModel): id: int; name: str; city: str; sport: str; format: str; status: str; settings: list; draw_size: int; venue: str; schedule: list
+class TournamentCreate(BaseModel): name: str; city: str; sport: str; format: str; type: str; status: str = "Open"; settings: list; draw_size: int = 16; venue: str = ""; about: str = ""; schedule: list = []
+class TournamentUpdate(BaseModel): id: int; name: str; city: str; sport: str; format: str; status: str; settings: list; draw_size: int; venue: str; about: str; schedule: list
 class TournamentDelete(BaseModel): id: int
 class MatchCreate(BaseModel): category: str; city: str; group_id: str; t1: str; t2: str; date: str; time: str; stage: str
 class MatchFullUpdate(BaseModel): id: int; t1: str; t2: str; date: str; time: str; score: str
@@ -336,19 +336,24 @@ def get_all_transactions(db: Session = Depends(get_db)):
 def admin_leaderboard(tournament: str, city: str, level: str, db: Session = Depends(get_db)): return get_standings(tournament, city, level, db)
 @app.get("/tournaments")
 def get_tournaments(db: Session = Depends(get_db)): return db.query(models.Tournament).all()
+
+# UPDATED: Handles 'about'
 @app.post("/admin/create-tournament")
 def create_tournament(data: TournamentCreate, db: Session = Depends(get_db)):
     fees = [safe_int(c.get('fee')) for c in data.settings]
     total_prizes = [safe_int(c.get('p1'))+safe_int(c.get('p2'))+safe_int(c.get('p3')) for c in data.settings]
-    new_t = models.Tournament(name=data.name, city=data.city, sport=data.sport, format=data.format, type=data.type, status=data.status, settings=json.dumps(data.settings), venue=data.venue, schedule=json.dumps(data.schedule), fee=str(min(fees)) if fees else "0", prize=str(max(total_prizes)) if total_prizes else "0", draw_size=data.draw_size)
+    new_t = models.Tournament(name=data.name, city=data.city, sport=data.sport, format=data.format, type=data.type, status=data.status, settings=json.dumps(data.settings), venue=data.venue, about=data.about, schedule=json.dumps(data.schedule), fee=str(min(fees)) if fees else "0", prize=str(max(total_prizes)) if total_prizes else "0", draw_size=data.draw_size)
     db.add(new_t); db.commit(); return {"message": "Created"}
+
+# UPDATED: Handles 'about'
 @app.post("/admin/edit-tournament")
 def admin_edit_tournament(data: TournamentUpdate, db: Session = Depends(get_db)):
     t = db.query(models.Tournament).filter(models.Tournament.id == data.id).first()
     if t:
-        t.name = data.name; t.city = data.city; t.sport = data.sport; t.format = data.format; t.status = data.status; t.settings = json.dumps(data.settings); t.venue = data.venue; t.schedule = json.dumps(data.schedule); t.draw_size = data.draw_size; fees = [safe_int(c.get('fee')) for c in data.settings]; t.fee = str(min(fees)) if fees else "0"
+        t.name = data.name; t.city = data.city; t.sport = data.sport; t.format = data.format; t.status = data.status; t.settings = json.dumps(data.settings); t.venue = data.venue; t.about = data.about; t.schedule = json.dumps(data.schedule); t.draw_size = data.draw_size; fees = [safe_int(c.get('fee')) for c in data.settings]; t.fee = str(min(fees)) if fees else "0"
         db.commit()
     return {"message": "Updated"}
+
 @app.post("/admin/delete-tournament")
 def delete_tournament(data: TournamentDelete, db: Session = Depends(get_db)):
     t = db.query(models.Tournament).filter(models.Tournament.id == data.id).first()
@@ -363,11 +368,28 @@ def get_scores(db: Session = Depends(get_db)): return db.query(models.Match).all
 def admin_create_match(m: MatchCreate, db: Session = Depends(get_db)):
     db.add(models.Match(category=m.category, city=m.city, group_id=m.group_id, t1=m.t1, t2=m.t2, date=m.date or "2025-01-20", time=m.time or "10:00", status="Scheduled", stage=m.stage))
     db.commit(); return {"message": "Created"}
+
+# --- FIXED ENDPOINT: ADDED PRIZE DISTRIBUTION ---
 @app.post("/admin/edit-match-full")
 def admin_edit_match_full(data: MatchFullUpdate, db: Session = Depends(get_db)):
     m = db.query(models.Match).filter(models.Match.id == data.id).first()
-    if m: m.t1 = data.t1; m.t2 = data.t2; m.date = data.date; m.time = data.time; m.score = data.score; m.status = "Official" if data.score else m.status; db.commit()
+    if m: 
+        m.t1 = data.t1
+        m.t2 = data.t2
+        m.date = data.date
+        m.time = data.time
+        m.score = data.score
+        
+        # IF SCORE IS PRESENT, MARK OFFICIAL AND PAY WINNER
+        if data.score:
+            m.status = "Official"
+            winner = calculate_winner(m.score, m.t1, m.t2)
+            if winner: 
+                distribute_prize(m, winner, db)
+        
+        db.commit()
     return {"msg": "ok"}
+
 @app.post("/admin/delete-match")
 def admin_delete_match(data: MatchDelete, db: Session = Depends(get_db)):
     db.query(models.Match).filter(models.Match.id == data.id).delete(); db.commit(); return {"msg": "deleted"}
