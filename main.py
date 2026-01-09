@@ -390,14 +390,15 @@ def distribute_prize(match, winner_name, db):
     if not tourney: return
     categories = json.loads(tourney.settings)
     
+    # Extract Winner IDs
     winner_ids = re.findall(r'\((.*?)\)', winner_name)
-    if not winner_ids: 
-        print("No Winner IDs found")
-        return
+    if not winner_ids: return
 
+    # Get First Winner Object to check category/duplicates
     first_winner = db.query(models.User).filter(models.User.team_id == winner_ids[0]).first()
     if not first_winner: return
     
+    # Get Registration to find Category Settings
     reg = db.query(models.Registration).filter(
         models.Registration.user_id == first_winner.id, 
         models.Registration.tournament_name == match.category, 
@@ -406,48 +407,58 @@ def distribute_prize(match, winner_name, db):
     
     if not reg: return
     match_level = reg.category 
-    
     settings = next((c for c in categories if c['name'] == match_level), None)
     if not settings: return
-    
-    prize_amt = 0; prize_desc = ""
-    if match.stage == "Final":
-        prize_amt = safe_int(settings.get('p1')); prize_desc = f"1st Place: {match.category}"
-    elif match.stage == "3rd Place":
-        prize_amt = safe_int(settings.get('p3')); prize_desc = f"3rd Place: {match.category}"
-    else:
-        # REGULAR MATCH BONUS - UNIQUE DESC TO ALLOW MULTIPLE WINS
-        prize_amt = safe_int(settings.get('per_match', 0)); prize_desc = f"Match Win (Match #{match.id})"
-        
-    exists = db.query(models.Transaction).filter(models.Transaction.description == prize_desc, models.Transaction.user_id == first_winner.id).first()
-    if exists: 
-        print("Already Paid for this match")
-        return 
 
-    if prize_amt > 0:
-        amount = prize_amt // len(winner_ids) 
+    # --- 1. ALWAYS CREDIT PER MATCH WIN (For All Winners) ---
+    per_match_amt = safe_int(settings.get('per_match', 0))
+    match_desc = f"Match Win (Match #{match.id})"
+    
+    # REMOVED SAFETY CHECK: Will always pay if amount > 0
+    if per_match_amt > 0:
+        amount = per_match_amt // len(winner_ids)
         for tid in winner_ids:
             u = db.query(models.User).filter(models.User.team_id == tid).first()
-            if u: credit_user(db, u.id, amount, prize_desc)
+            if u: credit_user(db, u.id, amount, match_desc)
 
-    # PAY 2ND PLACE (IF FINAL)
+    # --- 2. HANDLE SPECIAL STAGE PRIZES (Finals & 3rd Place) ---
+    
     if match.stage == "Final":
+        # --- 1st Place (Additional to Match Win) ---
+        p1_amt = safe_int(settings.get('p1', 0))
+        p1_desc = f"1st Place Prize: {match.category}"
+        
+        # REMOVED SAFETY CHECK
+        if p1_amt > 0:
+            amount = p1_amt // len(winner_ids)
+            for tid in winner_ids:
+                u = db.query(models.User).filter(models.User.team_id == tid).first()
+                if u: credit_user(db, u.id, amount, p1_desc)
+
+        # --- 2nd Place (For the Loser) ---
         loser_name = match.t2 if winner_name == match.t1 else match.t1
         loser_ids = re.findall(r'\((.*?)\)', loser_name)
-        p2_amt = safe_int(settings.get('p2'))
-        if p2_amt > 0 and loser_ids:
+        p2_amt = safe_int(settings.get('p2', 0))
+        p2_desc = f"2nd Place Prize: {match.category}"
+        
+        # REMOVED SAFETY CHECK
+        if loser_ids and p2_amt > 0:
             amount = p2_amt // len(loser_ids)
             for tid in loser_ids:
                 u = db.query(models.User).filter(models.User.team_id == tid).first()
-                if u: credit_user(db, u.id, amount, f"2nd Place: {match.category}")
+                if u: credit_user(db, u.id, amount, p2_desc)
+
+    elif match.stage == "3rd Place":
+        # --- 3rd Place (Additional to Match Win) ---
+        p3_amt = safe_int(settings.get('p3', 0))
+        p3_desc = f"3rd Place Prize: {match.category}"
         
-        # ALSO CREDIT MATCH WIN FOR FINAL WINNER (STACKING)
-        match_win_bonus = safe_int(settings.get('per_match', 0))
-        if match_win_bonus > 0:
-             bonus_amt = match_win_bonus // len(winner_ids)
-             for tid in winner_ids:
-                 u = db.query(models.User).filter(models.User.team_id == tid).first()
-                 if u: credit_user(db, u.id, bonus_amt, f"Match Win (Match #{match.id})")
+        # REMOVED SAFETY CHECK
+        if p3_amt > 0:
+            amount = p3_amt // len(winner_ids)
+            for tid in winner_ids:
+                u = db.query(models.User).filter(models.User.team_id == tid).first()
+                if u: credit_user(db, u.id, amount, p3_desc)
 
 @app.post("/verify-score")
 def verify_score(data: ScoreVerify, db: Session = Depends(get_db)):
