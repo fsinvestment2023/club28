@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard, AlertCircle, RefreshCw } from 'lucide-react';
+import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard, AlertCircle, RefreshCw, ArrowUpRight } from 'lucide-react';
 import Dashboard from './Dashboard.jsx'; 
 
 // --- SHARED COMPONENTS ---
@@ -37,8 +37,8 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
                                                         <div className="flex items-center gap-2"><span className="bg-gray-100 text-gray-500 text-[9px] font-bold px-2 py-0.5 rounded uppercase">{m.stage}</span><span className="text-[9px] text-gray-400 italic">{m.group}</span></div>
                                                     ) : (
                                                         <div className="flex items-center gap-1">
-                                                            {/* --- FIX: Removed the condition so ALL stages show up --- */}
-                                                            <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mr-1">{m.stage}</span>
+                                                            {/* Show Stage Badge if not Group Stage */}
+                                                            {m.stage !== "Group Stage" && <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mr-1">{m.stage}</span>}
                                                             <span className={m.t1.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t1}</span>
                                                             <span className="text-[9px] text-gray-300 px-1">vs</span>
                                                             <span className={m.t2.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}>{m.t2}</span>
@@ -124,7 +124,14 @@ const TournamentRegistration = ({ onRegister }) => {
     };
 
     if (!tournament || !selectedCat) return <div className="p-10 text-center text-gray-500">Loading Event...</div>;
-    const prizes = [ { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, { rank: '3rd', amount: selectedCat.p3, icon: '🥉' } ];
+    
+    // --- UPDATED: DISPLAY ALL PRIZES INCLUDING MATCH WIN ---
+    const prizes = [ 
+        { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, 
+        { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, 
+        { rank: '3rd', amount: selectedCat.p3, icon: '🥉' },
+        { rank: 'Match Win', amount: selectedCat.per_match || 0, icon: '💰' } // New Row
+    ];
     
     const perPersonFee = selectedCat.fee;
     const teamFee = selectedCat.fee * 2;
@@ -157,6 +164,7 @@ const TournamentRegistration = ({ onRegister }) => {
             <div className="bg-blue-50 p-6 rounded-[30px] border border-blue-100 mb-24"><div className="flex items-center gap-3 mb-6"><Trophy className="text-yellow-500" size={24} fill="currentColor"/><div><span className="block font-black text-lg text-blue-900 uppercase italic">Prize Pool</span><span className="text-[10px] font-bold text-blue-400 uppercase">{selectedCat.name} Only</span></div></div><div className="space-y-3">{prizes.map((p, i) => (<div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm"><span className="font-bold text-gray-500 text-xs uppercase flex items-center gap-2"><span className="text-lg">{p.icon}</span> {p.rank} Place</span><span className="font-black text-lg text-blue-600">₹{p.amount}</span></div>))}</div></div>
         </div>
         
+        {/* PAYMENT OPTIONS */}
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-6 rounded-t-[30px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50">
             {isDoubles ? (
                 <>
@@ -229,6 +237,7 @@ const OngoingEvents = ({ category, city, level, myTeamID }) => {
         if (myTeamString.includes(scoreEntry.submitted_by_team)) { return <span className="text-gray-400 text-[8px] font-bold italic">Waiting...</span>; }
         return (<div className="flex gap-1 items-center"><span className="text-xs font-black mr-1">{scoreEntry.score}</span><button onClick={() => handleVerify(match.id, "DENY")} className="text-red-500 text-[8px] font-bold border border-red-100 px-1 rounded">X</button><button onClick={() => handleVerify(match.id, "APPROVE")} className="text-green-600 text-[8px] font-bold border border-green-100 px-1 rounded">✓</button></div>); 
     };
+
     return (
         <div className="mt-8 mb-24 px-6"><div className="flex items-center gap-2 mb-4"><Activity className="text-green-500 animate-pulse" size={20}/><h2 className="text-lg font-black italic uppercase">Ongoing Event ({city})</h2></div><div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden"><div className="bg-blue-600 p-4 flex justify-between items-center text-white"><div><p className="text-[10px] font-bold opacity-80 uppercase">Tournament</p><h3 className="font-black text-lg italic">{category} <span className="text-sm font-black text-yellow-300 ml-1">({level ? level.toUpperCase() : "..."})</span></h3></div><div className="text-right"><p className="text-[10px] font-bold opacity-80 uppercase">My Rank</p><p className="font-black text-2xl">#{standings.findIndex(t => t.name.includes(myTeamID)) + 1 || "-"}</p></div></div><div className="flex border-b border-gray-100 divide-x divide-gray-100"><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Played</p><p className="font-black text-lg">{standings.find(t => t.name.includes(myTeamID))?.played || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Won</p><p className="font-black text-lg text-green-600">{standings.find(t => t.name.includes(myTeamID))?.gamesWon || 0}</p></div><div className="flex-1 p-3 text-center"><p className="text-[9px] text-gray-400 font-bold uppercase">Points</p><p className="font-black text-lg text-blue-600">{standings.find(t => t.name.includes(myTeamID))?.points || 0}</p></div></div><div className="flex border-b border-gray-100"><button onClick={() => setActiveTab("SCHEDULE")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "SCHEDULE" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Schedule</button><button onClick={() => setActiveTab("STANDINGS")} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${activeTab === "STANDINGS" ? "bg-gray-50 text-blue-600" : "text-gray-400"}`}>Leaderboard</button></div><div className="max-h-96 overflow-y-auto">{activeTab === "SCHEDULE" ? ( <CompactScheduleList matches={schedule} myTeamID={myTeamID} onAction={renderMatchAction} /> ) : (<div className="pb-4"><div className="flex justify-center p-3 bg-gray-50 border-b border-gray-100"><div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">{['A', 'B', 'C', 'D'].map((group) => (<button key={group} onClick={() => setActiveGroup(group)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeGroup === group ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-600'}`}>Group {group}</button>))}</div></div>
         <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 text-[9px] font-bold text-gray-400 uppercase"><div className="col-span-2 text-center">Rank</div><div className="col-span-4">Team</div><div className="col-span-2 text-center">Matches</div><div className="col-span-2 text-center">Games</div><div className="col-span-2 text-center">Pts</div></div>
@@ -305,6 +314,7 @@ const ProfilePage = ({ user, onLogout }) => {
     const handleSave = async () => { const res = await fetch('http://127.0.0.1:8000/user/update-profile', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, email: formData.email, gender: formData.gender, dob: formData.dob, play_location: formData.play_location }) }); if(res.ok) { alert("Profile Updated!"); setEditMode(false); window.location.reload(); } };
     const handleAddMoney = async () => { const amount = prompt("Enter amount to add (Simulated Razorpay):", "500"); if(!amount) return; const res = await fetch('http://127.0.0.1:8000/admin/add-wallet', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) }) }); if(res.ok) { alert(`₹${amount} added successfully! (Simulated)`); window.location.reload(); } };
 
+    // --- WITHDRAW FUNCTION ---
     const handleWithdraw = async () => {
         const amount = prompt("Enter amount to withdraw:", "500");
         if(!amount) return;
@@ -324,10 +334,11 @@ const ProfilePage = ({ user, onLogout }) => {
         } catch(e) { alert("Error connecting to server"); }
     };
 
+    // --- COLOR LOGIC FOR TRANSACTIONS ---
     const getAmountColor = (t) => {
         if (t.type === "CREDIT") return "text-green-600";
         if (t.mode === "WITHDRAWAL") return "text-red-500";
-        return "text-pink-500"; 
+        return "text-pink-500"; // EVENT_FEE
     };
 
     return (

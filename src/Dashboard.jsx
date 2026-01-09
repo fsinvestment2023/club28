@@ -25,7 +25,6 @@ const Dashboard = () => {
   const [walletAmount, setWalletAmount] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // Create/Edit Event States
   const [editingId, setEditingId] = useState(null); 
   const [eventName, setEventName] = useState("");
   const [eventCity, setEventCity] = useState("MUMBAI"); 
@@ -173,6 +172,26 @@ const Dashboard = () => {
   const handleMatchUpdate = async (id) => { const t1 = document.getElementById(`t1-${id}`).value; const t2 = document.getElementById(`t2-${id}`).value; const date = document.getElementById(`date-${id}`).value; const time = document.getElementById(`time-${id}`).value; const score = document.getElementById(`score-${id}`).value; await fetch(`${API_URL}/admin/edit-match-full`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id, t1, t2, date, time, score }) }); alert("Match Updated"); fetchMatches(); fetchLeaderboard(); };
   const handleDeleteMatch = async (id) => { if(!window.confirm("Delete this match?")) return; await fetch(`${API_URL}/admin/delete-match`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchMatches(); };
 
+  // Helper to determine winner based on score
+  const getWinner = (m) => {
+    if (!m.score) return "-";
+    try {
+        let t1_sets = 0;
+        let t2_sets = 0;
+        const sets = m.score.split(',');
+        sets.forEach(s => {
+            const p = s.trim().split('-');
+            if (p.length === 2) {
+                if (parseInt(p[0]) > parseInt(p[1])) t1_sets++;
+                else if (parseInt(p[1]) > parseInt(p[0])) t2_sets++;
+            }
+        });
+        if (t1_sets > t2_sets) return m.t1;
+        if (t2_sets > t1_sets) return m.t2;
+        return "Draw";
+    } catch { return "Error"; }
+  };
+
   if (!isAuthenticated) return ( <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center"><h1 className="text-2xl font-black mb-4">ADMIN ACCESS</h1><input type="password" placeholder="Pass" className="w-full bg-gray-100 p-4 rounded-xl mb-4 font-bold text-center" value={password} onChange={e=>setPassword(e.target.value)}/><button onClick={handleLogin} className="w-full bg-black text-white p-4 rounded-xl font-bold">UNLOCK</button></div></div> );
 
   return (
@@ -217,30 +236,9 @@ const Dashboard = () => {
 
       {/* --- EVENT MODAL --- */}
       {isModalOpen && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"><div className="bg-black p-4 flex justify-between items-center text-white"><h3 className="font-bold">{editingId ? "Edit Event" : "Create New Event"}</h3><button onClick={() => setIsModalOpen(false)}><X size={20}/></button></div><div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-      
-      <div className="grid grid-cols-3 gap-4">
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
-        <div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div>
-        <div>
-            <label className="text-xs font-bold text-gray-400 uppercase">Sport</label>
-            <select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200">
-                <option value="Padel">Padel</option>
-                <option value="Pickleball">Pickleball</option>
-                <option value="Tennis">Tennis</option>
-                <option value="Badminton">Badminton</option>
-                <option value="Box Cricket">Box Cricket</option>
-                <option value="Football">Football</option>
-            </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div>
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div>
-        <div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="8">8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div>
-      </div>
-      
-      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label (e.g. Week 1)" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value (e.g. Mon, Wed, Fri)" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div>
+      <div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Event Name</label><input value={eventName} onChange={e => setEventName(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">City</label><input value={eventCity} onChange={e => setEventCity(e.target.value.toUpperCase())} placeholder="e.g. MUMBAI" className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"/></div><div><label className="text-xs font-bold text-gray-400 uppercase">Sport</label><select value={eventSport} onChange={e => setEventSport(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Padel">Padel</option><option value="Pickleball">Pickleball</option><option value="Tennis">Tennis</option><option value="Badminton">Badminton</option><option value="Box Cricket">Box Cricket</option><option value="Football">Football</option></select></div></div>
+      <div className="grid grid-cols-3 gap-4"><div><label className="text-xs font-bold text-gray-400 uppercase">Status</label><select value={eventStatus} onChange={e => setEventStatus(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Finished">Finished</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Format</label><select value={eventFormat} onChange={e => setEventFormat(e.target.value)} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="Singles">Singles</option><option value="Doubles">Doubles</option></select></div><div><label className="text-xs font-bold text-gray-400 uppercase">Draw Size</label><select value={drawSize} onChange={e => setDrawSize(parseInt(e.target.value))} className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200"><option value="8">8 Players (2 Grps)</option><option value={12}>12 Players (3 Grps)</option><option value={16}>16 Players (4 Grps)</option></select></div></div>
+      <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><Calendar size={14}/> Schedule Preview (Row & Column Style)</label><div className="space-y-2">{eventSchedule.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Row Label" value={row.label} onChange={e => updateSchedule(idx, 'label', e.target.value)} className="w-1/3 p-2 bg-gray-50 rounded border text-xs font-bold"/><input placeholder="Value" value={row.value} onChange={e => updateSchedule(idx, 'value', e.target.value)} className="flex-1 p-2 bg-gray-50 rounded border text-xs font-bold"/><button onClick={() => removeScheduleRow(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button></div>))}</div><button onClick={addScheduleRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1">+ Add Schedule Row</button></div>
       <div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Venue Information</label><textarea value={eventVenue} onChange={e => setEventVenue(e.target.value)} placeholder="Enter full address, landmarks, or google maps link..." className="w-full p-3 bg-gray-50 rounded-lg font-bold border border-gray-200 text-sm h-20 resize-none"/></div><div><label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Categories, Fees & Prizes</label><div className="space-y-2">{categories.map((cat, idx) => (<div key={idx} className="flex gap-2 items-center"><input placeholder="Name" value={cat.name} onChange={e => updateCategory(idx, 'name', e.target.value)} className="w-32 p-2 bg-gray-50 rounded border text-xs font-bold"/><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Fee</span><input type="number" value={cat.fee} onChange={e => updateCategory(idx, 'fee', e.target.value)} className="w-16 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">1st</span><input type="number" value={cat.p1} onChange={e => updateCategory(idx, 'p1', e.target.value)} className="w-20 p-2 bg-green-50 rounded border border-green-200 text-xs font-bold text-green-700"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">2nd</span><input type="number" value={cat.p2} onChange={e => updateCategory(idx, 'p2', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">3rd</span><input type="number" value={cat.p3} onChange={e => updateCategory(idx, 'p3', e.target.value)} className="w-20 p-2 bg-gray-50 rounded border text-xs font-bold"/></div><div className="flex flex-col"><span className="text-[9px] text-gray-400 uppercase font-bold">Per Match</span><input type="number" value={cat.per_match} onChange={e => updateCategory(idx, 'per_match', e.target.value)} className="w-20 p-2 bg-blue-50 rounded border border-blue-200 text-xs font-bold text-blue-700"/></div><button onClick={() => removeCategory(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded mt-3"><Trash2 size={16}/></button></div>))}</div><button onClick={addCategoryRow} className="mt-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-2 rounded flex items-center gap-1"><Plus size={14}/> Add Category</button></div><button onClick={handleModalSubmit} className="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">{editingId ? "Save Changes" : "Create Event"}</button></div></div></div>)}
 
       {/* --- SIDEBAR --- */}
@@ -373,7 +371,6 @@ const Dashboard = () => {
                                     <input onChange={e=>setNewMatchDate(e.target.value)} type="date" className="p-2 bg-gray-50 rounded border text-sm font-bold"/>
                                     <input onChange={e=>setNewMatchTime(e.target.value)} type="time" className="p-2 bg-gray-50 rounded border text-sm font-bold"/>
                                     
-                                    {/* --- UPDATED: MATCH STAGE SELECTOR --- */}
                                     <select onChange={e=>setNewMatchStage(e.target.value)} className="p-2 bg-gray-50 rounded border text-sm font-bold">
                                         <option value="Group Stage">Group Stage</option>
                                         <option value="Quarter Final">Quarter Final</option>
@@ -388,8 +385,20 @@ const Dashboard = () => {
                             </div>
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                                 <table className="w-full text-left text-sm">
-                                    <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Schedule</th><th className="p-4">Score</th><th className="p-4 text-right">Actions</th></tr></thead>
-                                    <tbody className="divide-y divide-gray-50">{matches.map(m => (<tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><span className="text-[9px] text-gray-400 uppercase font-bold bg-gray-100 px-1 rounded w-fit">{m.stage}</span></div></td><td className="p-4"><div className="flex flex-col gap-1"><input type="date" id={`date-${m.id}`} defaultValue={m.date} className="p-1 bg-transparent rounded text-xs font-bold border-none w-28"/><input type="time" id={`time-${m.id}`} defaultValue={m.time} className="p-1 bg-transparent rounded text-xs font-bold border-none w-20"/></div></td><td className="p-4"><input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-white border border-gray-200 text-center rounded font-bold p-2"/>{m.status === "Pending Verification" && <p className="text-[9px] text-orange-500 font-bold mt-1">PENDING</p>}{m.status === "Official" && <p className="text-[9px] text-green-500 font-bold mt-1">OFFICIAL</p>}</td><td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody>
+                                    <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Stage</th><th className="p-4">Score</th><th className="p-4">Winner</th><th className="p-4 text-right">Actions</th></tr></thead>
+                                    <tbody className="divide-y divide-gray-50">{matches.map(m => (<tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/></div></td>
+                                    
+                                    <td className="p-4"><span className="text-[9px] text-gray-500 uppercase font-bold bg-gray-100 px-2 py-1 rounded">{m.stage}</span></td>
+
+                                    <td className="p-4">
+                                        <input id={`score-${m.id}`} defaultValue={m.score} placeholder="-" className="w-16 bg-white border border-gray-200 text-center rounded font-bold p-2"/>
+                                        {m.status === "Pending Verification" && <p className="text-[9px] text-orange-500 font-bold mt-1">PENDING</p>}
+                                        {m.status === "Official" && <p className="text-[9px] text-green-500 font-bold mt-1">OFFICIAL</p>}
+                                    </td>
+                                    
+                                    <td className="p-4 font-bold text-green-600 text-xs">{getWinner(m)}</td>
+
+                                    <td className="p-4 text-right"><button onClick={() => handleMatchUpdate(m.id)} className="bg-blue-600 text-white p-2 rounded-lg mr-2"><Save size={16}/></button><button onClick={() => handleDeleteMatch(m.id)} className="bg-red-100 text-red-600 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody>
                                 </table>
                             </div>
                         </div>

@@ -6,9 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import random
-import re # Added for parsing Team IDs
+import re
 
-# Create Tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -40,33 +39,9 @@ def get_next_group(db: Session, tournament_name: str, city: str, category: str, 
         models.Registration.category == category,
         models.Registration.status == "Confirmed"
     ).count()
-    
-    if total_count >= draw_size: return None, "FULL"
-    num_groups = draw_size // 4
-    all_groups = ['A', 'B', 'C', 'D']
-    allowed_groups = all_groups[:num_groups] 
-    target_index = total_count % num_groups
-    target_group = allowed_groups[target_index]
-    
-    count_in_group = db.query(models.Registration).filter(
-        models.Registration.tournament_name == tournament_name,
-        models.Registration.city == city,
-        models.Registration.category == category,
-        models.Registration.group_id == target_group,
-        models.Registration.status == "Confirmed"
-    ).count()
-
-    if count_in_group < 4: return target_group, "OK"
-    for g in allowed_groups:
-        c = db.query(models.Registration).filter(
-            models.Registration.tournament_name == tournament_name,
-            models.Registration.city == city,
-            models.Registration.category == category,
-            models.Registration.group_id == g,
-            models.Registration.status == "Confirmed"
-        ).count()
-        if c < 4: return g, "OK"
-    return None, "FULL"
+    allowed_groups = ['A', 'B', 'C', 'D'][:(draw_size // 4)]
+    if not allowed_groups: allowed_groups = ['A']
+    return allowed_groups[total_count % len(allowed_groups)], "OK"
 
 # --- SCHEMAS ---
 class OTPRequest(BaseModel): phone: str
@@ -153,12 +128,12 @@ def update_user_profile(data: UserProfileUpdate, db: Session = Depends(get_db)):
 def get_user_history(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: return []
-    # Search for user name in matches (Checking if name is part of T1 or T2 strings for doubles)
     matches = db.query(models.Match).filter(models.Match.t1.contains(user.name) | models.Match.t2.contains(user.name)).all()
     return matches
 
 @app.get("/admin/players")
-def get_all_players(db: Session = Depends(get_db)): return db.query(models.User).all()
+def get_all_players(db: Session = Depends(get_db)): 
+    return db.query(models.User).all()
 
 @app.get("/admin/tournament-players")
 def get_tournament_players(name: str, city: str, db: Session = Depends(get_db)):
@@ -204,7 +179,6 @@ def admin_manual_register(data: AdminAddPlayer, db: Session = Depends(get_db)):
     tourney = db.query(models.Tournament).filter(models.Tournament.name == data.category, models.Tournament.city == data.city).first()
     if not tourney: raise HTTPException(status_code=404, detail="Tournament not found")
     group, status = get_next_group(db, data.category, data.city, data.level, tourney.draw_size)
-    if status == "FULL": raise HTTPException(status_code=400, detail=f"Category {data.level} is FULL")
     user = db.query(models.User).filter(models.User.phone == data.phone).first()
     if not user:
          team_id = f"{data.name[:2].upper()}{data.phone[-2:]}"
@@ -253,11 +227,10 @@ def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     if is_doubles:
         if data.payment_scope == "TEAM":
              group, status = get_next_group(db, data.tournament_name, data.city, data.level, tourney.draw_size)
-             if status == "FULL": raise HTTPException(status_code=400, detail="Tournament Full")
              reg_a = models.Registration(user_id=user.id, partner_id=partner.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=group, status="Confirmed")
              reg_b = models.Registration(user_id=partner.id, partner_id=user.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=group, status="Confirmed")
              db.add(reg_a); db.add(reg_b); db.commit()
-             return {"status": "joined", "message": "Team Registered!", "user": {"id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance}}
+             return {"status": "joined", "message": "Team Registered!", "user": {"id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance}, "registrations": []}
         else:
              reg_a = models.Registration(user_id=user.id, partner_id=partner.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=None, status="Partial_Confirmed")
              reg_b = models.Registration(user_id=partner.id, partner_id=user.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=None, status="Pending_Payment")
@@ -265,7 +238,6 @@ def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
              return {"status": "pending_partner", "message": "Registered! Partner must accept.", "user": {"id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance}}
     else:
         group, status = get_next_group(db, data.tournament_name, data.city, data.level, tourney.draw_size)
-        if status == "FULL": raise HTTPException(status_code=400, detail="Tournament Full")
         new_reg = models.Registration(user_id=user.id, tournament_name=data.tournament_name, city=data.city, sport=tourney.sport, category=data.level, group_id=group, status="Confirmed")
         db.add(new_reg); db.commit()
         regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
@@ -278,7 +250,6 @@ def confirm_partner_registration(data: ConfirmPartnerRequest, db: Session = Depe
     if not reg_b or reg_b.status != "Pending_Payment": raise HTTPException(status_code=400, detail="Invalid Request")
     user_b = db.query(models.User).filter(models.User.id == reg_b.user_id).first()
     reg_a = db.query(models.Registration).filter(models.Registration.user_id == reg_b.partner_id, models.Registration.tournament_name == reg_b.tournament_name, models.Registration.status == "Partial_Confirmed").first()
-    
     tourney = db.query(models.Tournament).filter(models.Tournament.name == reg_b.tournament_name, models.Tournament.city == reg_b.city).first()
     categories = json.loads(tourney.settings)
     pay_amount = 0
@@ -288,6 +259,9 @@ def confirm_partner_registration(data: ConfirmPartnerRequest, db: Session = Depe
     if data.payment_mode == "WALLET":
         if user_b.wallet_balance < pay_amount: raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
         user_b.wallet_balance -= pay_amount
+        db.add(models.Transaction(user_id=user_b.id, amount=pay_amount, type="DEBIT", mode="EVENT_FEE", description=f"Fee: {reg_b.tournament_name}"))
+    else:
+        db.add(models.Transaction(user_id=user_b.id, amount=pay_amount, type="CREDIT", mode="DIRECT_PAYMENT", description=f"Direct Pay: {reg_b.tournament_name}"))
         db.add(models.Transaction(user_id=user_b.id, amount=pay_amount, type="DEBIT", mode="EVENT_FEE", description=f"Fee: {reg_b.tournament_name}"))
     
     group, status = get_next_group(db, reg_b.tournament_name, reg_b.city, reg_b.category, tourney.draw_size)
@@ -315,20 +289,15 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
                  display_name = f"{user.name} ({user.team_id}) & {partner.name} ({partner.team_id})"
                  partner_reg = db.query(models.Registration).filter(models.Registration.user_id == partner.id, models.Registration.tournament_name == tournament).first()
                  if partner_reg: processed_ids.append(partner_reg.id)
-        
         points, played, won, total_game_points = 0, 0, 0, 0
         for m in matches:
-            # Check if user OR partner is in the match
-            is_in_t1 = user.name in m.t1
-            is_in_t2 = user.name in m.t2
-            
-            # Robust check for doubles partner logic
+            is_in_t1 = user.team_id in m.t1
+            is_in_t2 = user.team_id in m.t2
             if reg.partner_id:
                 partner = db.query(models.User).filter(models.User.id == reg.partner_id).first()
                 if partner:
-                    if partner.name in m.t1: is_in_t1 = True
-                    if partner.name in m.t2: is_in_t2 = True
-
+                    if partner.team_id in m.t1: is_in_t1 = True
+                    if partner.team_id in m.t2: is_in_t2 = True
             if is_in_t1 or is_in_t2:
                 played += 1
                 if m.score:
@@ -341,12 +310,8 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
                                 if is_in_t1: total_game_points += s1
                                 elif is_in_t2: total_game_points += s2
                     except: pass
-                
                 winner_name = calculate_winner(m.score, m.t1, m.t2)
-                # Winner check
-                if winner_name and (user.name in winner_name or (reg.partner_id and partner.name in winner_name)): 
-                    points += 3; won += 1
-                    
+                if winner_name and (user.team_id in winner_name): points += 3; won += 1
         standings.append({"name": display_name, "team_id": user.team_id, "group": reg.group_id or "A", "points": points, "gamesWon": won, "played": played, "totalGamePoints": total_game_points})
         processed_ids.append(reg.id)
     standings.sort(key=lambda x: x['points'], reverse=True)
@@ -366,7 +331,7 @@ def get_all_transactions(db: Session = Depends(get_db)):
         txns.append({"id": txn.id, "date": txn.date, "amount": txn.amount, "type": txn.type, "mode": txn.mode, "description": txn.description, "user_name": user.name, "user_phone": user.phone, "team_id": user.team_id})
     return txns
 
-# ... (Rest of Admin Endpoints) ...
+# ... Admin Endpoints ...
 @app.get("/admin/leaderboard")
 def admin_leaderboard(tournament: str, city: str, level: str, db: Session = Depends(get_db)): return get_standings(tournament, city, level, db)
 @app.get("/tournaments")
@@ -412,100 +377,86 @@ def submit_score(data: ScoreSubmit, db: Session = Depends(get_db)):
     if m: m.score = data.score; m.submitted_by_team = data.submitted_by_team; m.status = "Pending Verification"; db.commit()
     return {"msg": "ok"}
 
-# --- AUTOMATED PRIZE DISTRIBUTION ---
+# --- HELPER: CREDIT WALLET & LOG ---
+def credit_user(db, user_id, amount, desc):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user:
+        user.wallet_balance += amount
+        db.add(models.Transaction(user_id=user.id, amount=amount, type="CREDIT", mode="PRIZE", description=desc))
+        print(f"PAID {user.name}: {amount} for {desc}")
+
 def distribute_prize(match, winner_name, db):
     tourney = db.query(models.Tournament).filter(models.Tournament.name == match.category, models.Tournament.city == match.city).first()
     if not tourney: return
     categories = json.loads(tourney.settings)
     
-    # Identify prize money based on stage
-    prize_amount = 0
-    prize_desc = ""
-    
-    # Check if this is a "Final" or "3rd Place" match
-    is_final = match.stage == "Final"
-    is_3rd = match.stage == "3rd Place"
+    winner_ids = re.findall(r'\((.*?)\)', winner_name)
+    if not winner_ids: 
+        print("No Winner IDs found")
+        return
 
-    # Find the specific category settings for this match
-    match_category_settings = None
-    for cat in categories:
-        # Assuming the match category matches the setting name (e.g. "Advance")
-        # You might need to store the specific 'level' in the Match table if multiple levels exist
-        if cat['name'] in [match.category, "Advance", "Intermediate", "Open"]: # Simple fallback matching
-             match_category_settings = cat
-             break
+    first_winner = db.query(models.User).filter(models.User.team_id == winner_ids[0]).first()
+    if not first_winner: return
     
-    if not match_category_settings: return
-
-    if is_final:
-        prize_amount = safe_int(match_category_settings.get('p1'))
-        prize_desc = f"1st Place: {match.category}"
-    elif is_3rd:
-        prize_amount = safe_int(match_category_settings.get('p3'))
-        prize_desc = f"3rd Place: {match.category}"
+    reg = db.query(models.Registration).filter(
+        models.Registration.user_id == first_winner.id, 
+        models.Registration.tournament_name == match.category, 
+        models.Registration.city == match.city
+    ).first()
+    
+    if not reg: return
+    match_level = reg.category 
+    
+    settings = next((c for c in categories if c['name'] == match_level), None)
+    if not settings: return
+    
+    prize_amt = 0; prize_desc = ""
+    if match.stage == "Final":
+        prize_amt = safe_int(settings.get('p1')); prize_desc = f"1st Place: {match.category}"
+    elif match.stage == "3rd Place":
+        prize_amt = safe_int(settings.get('p3')); prize_desc = f"3rd Place: {match.category}"
     else:
-        # Regular Match Win Bonus
-        prize_amount = safe_int(match_category_settings.get('per_match', 0))
-        prize_desc = f"Match Win Bonus"
-
-    if prize_amount > 0:
-        # DOUBLES CHECK: If winner name has "&", split prize
-        if "&" in winner_name:
-            # Try to extract IDs from format "Name (ID) & Name (ID)"
-            ids = re.findall(r'\((.*?)\)', winner_name)
-            if ids:
-                 split_prize = prize_amount // 2
-                 for team_id in ids:
-                     user = db.query(models.User).filter(models.User.team_id == team_id).first()
-                     if user:
-                         user.wallet_balance += split_prize
-                         db.add(models.Transaction(user_id=user.id, amount=split_prize, type="CREDIT", mode="PRIZE", description=prize_desc))
-        else:
-            # SINGLES CHECK
-            # Extract single ID
-            single_id_match = re.search(r'\((.*?)\)', winner_name)
-            if single_id_match:
-                 team_id = single_id_match.group(1)
-                 user = db.query(models.User).filter(models.User.team_id == team_id).first()
-                 if user:
-                     user.wallet_balance += prize_amount
-                     db.add(models.Transaction(user_id=user.id, amount=prize_amount, type="CREDIT", mode="PRIZE", description=prize_desc))
-
-    # Handle 2nd Place (Loser of Final)
-    if is_final:
-        loser_name = match.t2 if winner_name == match.t1 else match.t1
-        p2_amount = safe_int(match_category_settings.get('p2'))
+        # REGULAR MATCH BONUS - UNIQUE DESC TO ALLOW MULTIPLE WINS
+        prize_amt = safe_int(settings.get('per_match', 0)); prize_desc = f"Match Win (Match #{match.id})"
         
-        if p2_amount > 0:
-             ids = re.findall(r'\((.*?)\)', loser_name)
-             if ids:
-                 split_prize = p2_amount // 2
-                 for team_id in ids:
-                     user = db.query(models.User).filter(models.User.team_id == team_id).first()
-                     if user:
-                         user.wallet_balance += split_prize
-                         db.add(models.Transaction(user_id=user.id, amount=split_prize, type="CREDIT", mode="PRIZE", description=f"2nd Place: {match.category}"))
-             else:
-                 # Single loser
-                 single_id_match = re.search(r'\((.*?)\)', loser_name)
-                 if single_id_match:
-                     team_id = single_id_match.group(1)
-                     user = db.query(models.User).filter(models.User.team_id == team_id).first()
-                     if user:
-                         user.wallet_balance += p2_amount
-                         db.add(models.Transaction(user_id=user.id, amount=p2_amount, type="CREDIT", mode="PRIZE", description=f"2nd Place: {match.category}"))
+    exists = db.query(models.Transaction).filter(models.Transaction.description == prize_desc, models.Transaction.user_id == first_winner.id).first()
+    if exists: 
+        print("Already Paid for this match")
+        return 
 
+    if prize_amt > 0:
+        amount = prize_amt // len(winner_ids) 
+        for tid in winner_ids:
+            u = db.query(models.User).filter(models.User.team_id == tid).first()
+            if u: credit_user(db, u.id, amount, prize_desc)
+
+    # PAY 2ND PLACE (IF FINAL)
+    if match.stage == "Final":
+        loser_name = match.t2 if winner_name == match.t1 else match.t1
+        loser_ids = re.findall(r'\((.*?)\)', loser_name)
+        p2_amt = safe_int(settings.get('p2'))
+        if p2_amt > 0 and loser_ids:
+            amount = p2_amt // len(loser_ids)
+            for tid in loser_ids:
+                u = db.query(models.User).filter(models.User.team_id == tid).first()
+                if u: credit_user(db, u.id, amount, f"2nd Place: {match.category}")
+        
+        # ALSO CREDIT MATCH WIN FOR FINAL WINNER (STACKING)
+        match_win_bonus = safe_int(settings.get('per_match', 0))
+        if match_win_bonus > 0:
+             bonus_amt = match_win_bonus // len(winner_ids)
+             for tid in winner_ids:
+                 u = db.query(models.User).filter(models.User.team_id == tid).first()
+                 if u: credit_user(db, u.id, bonus_amt, f"Match Win (Match #{match.id})")
 
 @app.post("/verify-score")
 def verify_score(data: ScoreVerify, db: Session = Depends(get_db)):
     m = db.query(models.Match).filter(models.Match.id == data.match_id).first()
     if m: 
         m.status = "Official" if data.action == "APPROVE" else "Disputed"
-        
         if m.status == "Official":
              winner = calculate_winner(m.score, m.t1, m.t2)
              if winner: distribute_prize(m, winner, db)
-
         db.commit()
     return {"msg": "ok"}
 
@@ -517,8 +468,10 @@ def calculate_winner(score_str, t1, t2):
     if not score_str: return None
     try:
         t1_sets, t2_sets = 0, 0
-        for s in score_str.split(','):
-            p = s.strip().split('-')
+        score_txt = score_str.replace(" ", "")
+        sets = re.split(r'[,|]', score_txt)
+        for s in sets:
+            p = s.split('-')
             if len(p) == 2:
                 if int(p[0]) > int(p[1]): t1_sets += 1
                 elif int(p[1]) > int(p[0]): t2_sets += 1
