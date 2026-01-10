@@ -16,7 +16,7 @@ const loadRazorpayScript = () => {
     });
 };
 
-// --- NOTIFICATION CENTER (MODAL VERSION) ---
+// --- NOTIFICATION CENTER (MODAL) ---
 const NotificationCenter = ({ isOpen, onClose, teamId, tournament, city }) => {
     const [activeTab, setActiveTab] = useState("PERSONAL");
     const [notifications, setNotifications] = useState([]);
@@ -29,19 +29,11 @@ const NotificationCenter = ({ isOpen, onClose, teamId, tournament, city }) => {
             if (tournament && city) {
                 url += `?tournament=${encodeURIComponent(tournament)}&city=${encodeURIComponent(city)}`;
             }
-
-            fetch(url)
-                .then(res => res.json())
-                .then(data => {
-                    setNotifications(data);
-                    setLoading(false);
-                })
-                .catch(err => setLoading(false));
+            fetch(url).then(res => res.json()).then(data => { setNotifications(data); setLoading(false); }).catch(err => setLoading(false));
         }
     }, [isOpen, teamId, tournament, city]);
 
     if (!isOpen) return null;
-
     const filteredData = notifications.filter(n => n.tab === activeTab);
 
     return (
@@ -49,50 +41,30 @@ const NotificationCenter = ({ isOpen, onClose, teamId, tournament, city }) => {
             <div className="bg-[#F2F4F8] w-full max-w-md h-[85vh] sm:h-[600px] rounded-t-[30px] sm:rounded-[30px] shadow-2xl flex flex-col overflow-hidden transform transition-transform duration-300 slide-in-from-bottom">
                 <div className="pt-8 pb-4 px-8 bg-white rounded-b-[30px] shadow-sm z-10 relative">
                     <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-2 text-blue-900">
-                            <Bell className="fill-current" size={20} />
-                            <h2 className="text-xl font-black italic tracking-wider uppercase">UPDATES</h2>
-                        </div>
-                        <button onClick={onClose} className="bg-gray-100 hover:bg-gray-200 p-2 rounded-full text-gray-500 transition-colors">
-                            <X size={20} />
-                        </button>
+                        <div className="flex items-center gap-2 text-blue-900"><Bell className="fill-current" size={20} /><h2 className="text-xl font-black italic tracking-wider uppercase">UPDATES</h2></div>
+                        <button onClick={onClose} className="bg-gray-100 hover:bg-gray-200 p-2 rounded-full text-gray-500 transition-colors"><X size={20} /></button>
                     </div>
                     <div className="flex justify-between items-center border-b border-gray-100">
                         {['PERSONAL', 'EVENT', 'COMMUNITY'].map((tab) => (
-                            <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-3 text-[10px] font-black tracking-widest uppercase transition-all relative ${activeTab === tab ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                                {tab}
-                                {activeTab === tab && <span className="absolute bottom-0 left-0 w-full h-[3px] bg-blue-600 rounded-t-full" />}
-                            </button>
+                            <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-3 text-[10px] font-black tracking-widest uppercase transition-all relative ${activeTab === tab ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>{tab}{activeTab === tab && <span className="absolute bottom-0 left-0 w-full h-[3px] bg-blue-600 rounded-t-full" />}</button>
                         ))}
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {loading ? (
-                        <div className="text-center py-10 text-gray-400 text-xs font-bold animate-pulse">Syncing Updates...</div>
-                    ) : filteredData.length > 0 ? (
-                        filteredData.map((item, idx) => (
-                            <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-white hover:border-blue-100 transition-all group">
-                                <div className="flex justify-between items-start mb-2">
-                                    <h3 className="font-black text-gray-800 text-sm group-hover:text-blue-600 transition-colors">{item.title}</h3>
-                                    <span className="text-[9px] font-bold text-gray-400 bg-gray-50 px-2 py-1 rounded-full uppercase">{item.time}</span>
-                                </div>
-                                <p className="text-xs font-bold text-gray-600 leading-relaxed mb-1">{item.message}</p>
-                                {item.sub_text && <p className="text-[10px] font-bold text-gray-400 italic">{item.sub_text}</p>}
-                            </div>
-                        ))
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-40 text-gray-300">
-                            <Bell size={32} className="mb-2 opacity-20" />
-                            <p className="text-xs font-bold uppercase tracking-widest opacity-50">No new updates</p>
+                    {loading ? <div className="text-center py-10 text-gray-400 text-xs font-bold animate-pulse">Syncing...</div> : filteredData.length > 0 ? filteredData.map((item, idx) => (
+                        <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-white hover:border-blue-100 transition-all group">
+                            <div className="flex justify-between items-start mb-2"><h3 className="font-black text-gray-800 text-sm group-hover:text-blue-600 transition-colors">{item.title}</h3><span className="text-[9px] font-bold text-gray-400 bg-gray-50 px-2 py-1 rounded-full uppercase">{item.time}</span></div>
+                            <p className="text-xs font-bold text-gray-600 leading-relaxed mb-1">{item.message}</p>
+                            {item.sub_text && <p className="text-[10px] font-bold text-gray-400 italic">{item.sub_text}</p>}
                         </div>
-                    )}
+                    )) : <div className="flex flex-col items-center justify-center h-40 text-gray-300"><Bell size={32} className="mb-2 opacity-20" /><p className="text-xs font-bold uppercase tracking-widest opacity-50">No updates</p></div>}
                 </div>
             </div>
         </div>
     );
 };
 
-// --- INLINE UPDATES SECTION ---
+// --- INLINE UPDATES ---
 const InlineUpdatesSection = ({ teamId, tournament, city }) => {
     const [activeTab, setActiveTab] = useState("PERSONAL");
     const [notifications, setNotifications] = useState([]);
@@ -102,16 +74,8 @@ const InlineUpdatesSection = ({ teamId, tournament, city }) => {
         if (teamId) {
             setLoading(true);
             let url = `${API_URL}/user/${teamId}/notifications`;
-            if (tournament && city) {
-                url += `?tournament=${encodeURIComponent(tournament)}&city=${encodeURIComponent(city)}`;
-            }
-            fetch(url)
-                .then(res => res.json())
-                .then(data => {
-                    setNotifications(data);
-                    setLoading(false);
-                })
-                .catch(err => setLoading(false));
+            if (tournament && city) url += `?tournament=${encodeURIComponent(tournament)}&city=${encodeURIComponent(city)}`;
+            fetch(url).then(res => res.json()).then(data => { setNotifications(data); setLoading(false); }).catch(err => setLoading(false));
         }
     }, [teamId, tournament, city]);
 
@@ -119,45 +83,28 @@ const InlineUpdatesSection = ({ teamId, tournament, city }) => {
 
     return (
         <div className="mx-6 mb-8 mt-4">
-            <div className="flex items-center gap-2 mb-4">
-                <Bell className="text-blue-600 animate-pulse" size={20}/>
-                <h2 className="text-lg font-black italic uppercase text-gray-800">Latest Updates</h2>
-            </div>
-            
+            <div className="flex items-center gap-2 mb-4"><Bell className="text-blue-600 animate-pulse" size={20}/><h2 className="text-lg font-black italic uppercase text-gray-800">Latest Updates</h2></div>
             <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100">
                 <div className="flex justify-between items-center border-b border-gray-100 mb-4">
                     {['PERSONAL', 'EVENT', 'COMMUNITY'].map((tab) => (
-                        <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-3 text-[10px] font-black tracking-widest uppercase transition-all relative ${activeTab === tab ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                            {tab}
-                            {activeTab === tab && <span className="absolute bottom-0 left-0 w-full h-[3px] bg-blue-600 rounded-t-full" />}
-                        </button>
+                        <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-3 text-[10px] font-black tracking-widest uppercase transition-all relative ${activeTab === tab ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>{tab}{activeTab === tab && <span className="absolute bottom-0 left-0 w-full h-[3px] bg-blue-600 rounded-t-full" />}</button>
                     ))}
                 </div>
-
                 <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                    {loading ? (
-                        <div className="text-center py-6 text-gray-400 text-xs font-bold">Loading...</div>
-                    ) : filteredData.length > 0 ? (
-                        filteredData.map((item, idx) => (
-                            <div key={idx} className="bg-gray-50 p-4 rounded-xl border border-gray-100 hover:border-blue-200 transition-all">
-                                <div className="flex justify-between items-start mb-1">
-                                    <h3 className="font-bold text-gray-800 text-xs">{item.title}</h3>
-                                    <span className="text-[9px] font-bold text-gray-400 uppercase">{item.time}</span>
-                                </div>
-                                <p className="text-[10px] font-bold text-gray-500 leading-relaxed">{item.message}</p>
-                                {item.sub_text && <p className="text-[9px] font-bold text-gray-400 italic mt-1">{item.sub_text}</p>}
-                            </div>
-                        ))
-                    ) : (
-                        <div className="text-center py-8 text-gray-300 text-xs font-bold uppercase">No new updates</div>
-                    )}
+                    {loading ? <div className="text-center py-6 text-gray-400 text-xs font-bold">Loading...</div> : filteredData.length > 0 ? filteredData.map((item, idx) => (
+                        <div key={idx} className="bg-gray-50 p-4 rounded-xl border border-gray-100 hover:border-blue-200 transition-all">
+                            <div className="flex justify-between items-start mb-1"><h3 className="font-bold text-gray-800 text-xs">{item.title}</h3><span className="text-[9px] font-bold text-gray-400 uppercase">{item.time}</span></div>
+                            <p className="text-[10px] font-bold text-gray-500 leading-relaxed">{item.message}</p>
+                            {item.sub_text && <p className="text-[9px] font-bold text-gray-400 italic mt-1">{item.sub_text}</p>}
+                        </div>
+                    )) : <div className="text-center py-8 text-gray-300 text-xs font-bold uppercase">No new updates</div>}
                 </div>
             </div>
         </div>
     );
 };
 
-// --- EARNINGS TRACKER (Filtered) ---
+// --- EARNINGS TRACKER ---
 const EarningsTracker = ({ teamId, tournament }) => {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -166,19 +113,12 @@ const EarningsTracker = ({ teamId, tournament }) => {
         if(teamId) {
             setLoading(true);
             let url = `${API_URL}/user/${teamId}/transactions`;
-            // Add tournament filter parameter
-            if (tournament) {
-                url += `?tournament=${encodeURIComponent(tournament)}`;
-            }
-            fetch(url)
-                .then(res => res.json())
-                .then(data => {
-                    // Filter only PRIZE earnings
+            if (tournament) url += `?tournament=${encodeURIComponent(tournament)}`;
+            fetch(url).then(res => res.json()).then(data => {
                     const earnings = data.filter(t => t.mode === 'PRIZE');
                     setTransactions(earnings);
                     setLoading(false);
-                })
-                .catch(e => setLoading(false));
+                }).catch(e => setLoading(false));
         }
     }, [teamId, tournament]);
 
@@ -186,41 +126,18 @@ const EarningsTracker = ({ teamId, tournament }) => {
 
     return (
         <div className="mx-6 mb-24 mt-6">
-            <div className="flex items-center gap-2 mb-4">
-                <div className="bg-green-100 p-1.5 rounded-full text-green-600">
-                    <TrendingUp size={16} />
-                </div>
-                <h2 className="text-lg font-black italic uppercase text-gray-800">Earnings Tracker</h2>
-            </div>
-            
+            <div className="flex items-center gap-2 mb-4"><div className="bg-green-100 p-1.5 rounded-full text-green-600"><TrendingUp size={16} /></div><h2 className="text-lg font-black italic uppercase text-gray-800">Earnings Tracker</h2></div>
             <div className="bg-gradient-to-br from-green-500 to-green-700 p-6 rounded-[30px] shadow-xl text-white mb-6 relative overflow-hidden">
-                <div className="relative z-10">
-                    <p className="text-xs font-bold text-green-100 uppercase tracking-widest mb-1">
-                        {tournament ? `${tournament} Winnings` : 'Total Winnings'}
-                    </p>
-                    <h3 className="text-4xl font-black">₹{totalEarnings}</h3>
-                </div>
+                <div className="relative z-10"><p className="text-xs font-bold text-green-100 uppercase tracking-widest mb-1">{tournament ? `${tournament} Winnings` : 'Total Winnings'}</p><h3 className="text-4xl font-black">₹{totalEarnings}</h3></div>
                 <Trophy className="absolute -bottom-4 -right-4 text-green-400 opacity-20" size={120} />
             </div>
-
             <div className="space-y-3">
-                {loading ? <div className="text-center text-xs text-gray-400">Loading...</div> : 
-                 transactions.length > 0 ? (
-                    transactions.map((t, i) => (
+                {loading ? <div className="text-center text-xs text-gray-400">Loading...</div> : transactions.length > 0 ? transactions.map((t, i) => (
                         <div key={i} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center">
-                            <div>
-                                <p className="font-bold text-gray-800 text-xs">{t.description}</p>
-                                <p className="text-[9px] font-bold text-gray-400 uppercase">{new Date(t.date).toLocaleDateString()}</p>
-                            </div>
+                            <div><p className="font-bold text-gray-800 text-xs">{t.description}</p><p className="text-[9px] font-bold text-gray-400 uppercase">{new Date(t.date).toLocaleDateString()}</p></div>
                             <span className="font-black text-green-600 text-sm">+₹{t.amount}</span>
                         </div>
-                    ))
-                 ) : (
-                    <div className="text-center py-6 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                        <p className="text-xs font-bold text-gray-400">No earnings found for this event.</p>
-                    </div>
-                 )
-                }
+                    )) : <div className="text-center py-6 bg-gray-50 rounded-2xl border border-dashed border-gray-200"><p className="text-xs font-bold text-gray-400">No earnings found for this event.</p></div>}
             </div>
         </div>
     );
@@ -293,71 +210,26 @@ const LoginPage = ({ onLogin }) => {
       setLoading(false); 
   };
   const handleVerifyOtp = (nextMode) => { if(otp !== "1234") return alert("Wrong OTP (Hint: 1234)"); setMode(nextMode); };
-  
   const handleRegister = async () => { if(!name || !password) return alert("Fill all fields"); setLoading(true); try { const res = await fetch(`${API_URL}/register`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, name, password }) }); const data = await res.json(); if(res.ok) { alert(`Registration Success! Team ID: ${data.user.team_id}`); setTeamId(data.user.team_id); setMode("LOGIN"); } else { alert(data.detail); } } catch(e) { alert("Registration Error"); } setLoading(false); };
-  
-  const handleResetPassword = async () => {
-      setLoading(true);
-      try {
-          const res = await fetch(`${API_URL}/reset-password`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, new_password: password }) });
-          if(res.ok) { alert("Password Reset Success!"); setMode("LOGIN"); } else { alert("Failed"); }
-      } catch(e) { alert("Error"); }
-      setLoading(false);
-  };
-
+  const handleResetPassword = async () => { setLoading(true); try { const res = await fetch(`${API_URL}/reset-password`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, new_password: password }) }); if(res.ok) { alert("Password Reset Success!"); setMode("LOGIN"); } else { alert("Failed"); } } catch(e) { alert("Error"); } setLoading(false); };
   const handleSignIn = async () => { setLoading(true); try { const res = await fetch(`${API_URL}/login`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ team_id: teamId, password }) }); const data = await res.json(); if(res.ok) onLogin({ ...data.user, registrations: data.registrations }); else alert(data.detail); } catch (e) { alert("Login Failed: Is backend running?"); } setLoading(false); };
   
   return (
     <div className="min-h-screen bg-blue-600 p-8 text-white flex flex-col justify-center relative">
         <h1 className="text-4xl font-black mb-8 text-center italic">PLAYTOMIC</h1>
-        
-        {/* --- LOGIN --- */}
-        {mode === "LOGIN" && (
-            <div className="space-y-4">
-                <h2 className="font-bold text-xl mb-4">Player Login</h2>
-                <input placeholder="Team ID (e.g. SA99)" value={teamId} onChange={e=>setTeamId(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/>
-                <input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/>
-                
-                <button onClick={handleSignIn} disabled={loading} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black uppercase shadow-lg">Login</button>
-                
-                {/* UPDATED LAYOUT: Create Account & Forgot Password on same line */}
-                <div className="flex justify-between items-center text-xs font-bold text-blue-200 mt-4 px-2">
-                    <button onClick={() => setMode("REGISTER_PHONE")} className="hover:text-white">Create Account</button>
-                    <button onClick={() => setMode("FORGOT_PHONE")} className="hover:text-white">Forgot Password?</button>
-                </div>
-                
-                {ourAim && (
-                    <button onClick={() => setShowAim(true)} className="w-full mt-8 border border-blue-400 p-3 rounded-xl text-xs font-bold text-blue-100 flex items-center justify-center gap-2 hover:bg-blue-700 transition-all">
-                        <Info size={14}/> Read Our Mission
-                    </button>
-                )}
-            </div>
-        )}
-
-        {/* --- REGISTER FLOW --- */}
+        {mode === "LOGIN" && (<div className="space-y-4"><h2 className="font-bold text-xl mb-4">Player Login</h2><input placeholder="Team ID (e.g. SA99)" value={teamId} onChange={e=>setTeamId(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/><input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/><button onClick={handleSignIn} disabled={loading} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black uppercase shadow-lg">Login</button><div className="flex justify-between items-center text-xs font-bold text-blue-200 mt-4 px-2"><button onClick={() => setMode("REGISTER_PHONE")} className="hover:text-white">Create Account</button><button onClick={() => setMode("FORGOT_PHONE")} className="hover:text-white">Forgot Password?</button></div>{ourAim && (<button onClick={() => setShowAim(true)} className="w-full mt-8 border border-blue-400 p-3 rounded-xl text-xs font-bold text-blue-100 flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"><Info size={14}/> Read Our Mission</button>)}</div>)}
         {mode === "REGISTER_PHONE" && (<div><h2 className="font-bold text-xl mb-4">Register - Step 1</h2><input placeholder="Phone Number" value={phone} onChange={e=>setPhone(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={() => handleSendOtp("REGISTER_OTP")} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Get OTP</button><button onClick={() => setMode("LOGIN")} className="w-full mt-4 text-blue-200 font-bold text-sm">Cancel</button></div>)}
         {mode === "REGISTER_OTP" && (<div><h2 className="font-bold text-xl mb-4">Verify OTP</h2><p className="text-sm mb-4 opacity-80">Sent to {phone}</p><input placeholder="Enter 1234" value={otp} onChange={e=>setOtp(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none text-center tracking-widest"/><button onClick={() => handleVerifyOtp("REGISTER_FINAL")} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Verify</button></div>)}
         {mode === "REGISTER_FINAL" && (<div><h2 className="font-bold text-xl mb-4">Complete Profile</h2><input placeholder="Full Name" value={name} onChange={e=>setName(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><input type="password" placeholder="Create Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={handleRegister} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Finish Setup</button></div>)}
-
-        {/* --- FORGOT PASSWORD FLOW --- */}
         {mode === "FORGOT_PHONE" && (<div><h2 className="font-bold text-xl mb-4">Reset Password</h2><p className="text-xs mb-4 text-blue-200">Enter your registered phone number.</p><input placeholder="Phone Number" value={phone} onChange={e=>setPhone(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={() => handleSendOtp("FORGOT_OTP", true)} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Send OTP</button><button onClick={() => setMode("LOGIN")} className="w-full mt-4 text-blue-200 font-bold text-sm">Cancel</button></div>)}
         {mode === "FORGOT_OTP" && (<div><h2 className="font-bold text-xl mb-4">Verify Identity</h2><p className="text-sm mb-4 opacity-80">OTP sent to {phone}</p><input placeholder="Enter 1234" value={otp} onChange={e=>setOtp(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none text-center tracking-widest"/><button onClick={() => handleVerifyOtp("FORGOT_NEW_PASS")} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Verify</button></div>)}
         {mode === "FORGOT_NEW_PASS" && (<div><h2 className="font-bold text-xl mb-4">New Password</h2><input type="password" placeholder="Create New Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={handleResetPassword} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Update Password</button></div>)}
-
-        {/* --- OUR AIM MODAL --- */}
-        {showAim && (
-            <div className="absolute inset-0 bg-blue-700 z-50 p-8 overflow-y-auto">
-                <button onClick={() => setShowAim(false)} className="absolute top-6 right-6 text-white font-bold">CLOSE X</button>
-                <h2 className="text-2xl font-black italic mb-6 mt-12 uppercase">Our Mission</h2>
-                <div className="text-sm font-medium leading-relaxed whitespace-pre-line text-blue-100">
-                    {ourAim || "Content coming soon..."}
-                </div>
-            </div>
-        )}
+        {showAim && (<div className="absolute inset-0 bg-blue-700 z-50 p-8 overflow-y-auto"><button onClick={() => setShowAim(false)} className="absolute top-6 right-6 text-white font-bold">CLOSE X</button><h2 className="text-2xl font-black italic mb-6 mt-12 uppercase">Our Mission</h2><div className="text-sm font-medium leading-relaxed whitespace-pre-line text-blue-100">{ourAim || "Content coming soon..."}</div></div>)}
     </div>
   );
 };
 
+// --- UPDATED TOURNAMENT REGISTRATION WITH RAZORPAY ---
 const TournamentRegistration = ({ onRegister }) => {
     const navigate = useNavigate(); const { id } = useParams(); const [tournament, setTournament] = useState(null); const [categories, setCategories] = useState([]); const [selectedCat, setSelectedCat] = useState(null); const [loading, setLoading] = useState(false);
     const [schedule, setSchedule] = useState([]);
@@ -365,22 +237,14 @@ const TournamentRegistration = ({ onRegister }) => {
     
     useEffect(() => { const loadData = async () => { const tRes = await fetch(`${API_URL}/tournaments`); const tData = await tRes.json(); const found = tData.find(t => t.id.toString() === id); setTournament(found); if (found) { const cats = JSON.parse(found.settings || "[]"); setCategories(cats); if (cats.length > 0) setSelectedCat(cats[0]); try { setSchedule(JSON.parse(found.schedule || "[]")); } catch {} } }; loadData(); }, [id]);
     
-    const handlePayment = async (mode, scope) => {
+    const performRegistration = async (currentUser, mode, scope) => {
         setLoading(true); 
-        const user = JSON.parse(localStorage.getItem("user"));
-        
-        if (tournament.format === "Doubles" && !partnerId) {
-            alert("This is a Doubles Event. Please enter your Partner's Team ID.");
-            setLoading(false);
-            return;
-        }
-
         try { 
             const response = await fetch(`${API_URL}/join-tournament`, { 
                 method: 'POST', 
                 headers: { 'Content-Type': 'application/json' }, 
                 body: JSON.stringify({ 
-                    phone: user.phone, 
+                    phone: currentUser.phone, 
                     tournament_name: tournament.name, 
                     city: tournament.city, 
                     sport: tournament.sport, 
@@ -395,11 +259,10 @@ const TournamentRegistration = ({ onRegister }) => {
                 const errorMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
                 throw new Error(errorMsg || "Payment Failed"); 
             }
-            
             if (data.status === "pending_partner") {
                 alert(`Registered! We notified ${partnerId}. They must confirm payment.`);
             } else {
-                const updatedUser = { ...user, wallet_balance: data.user.wallet_balance, registrations: data.registrations };
+                const updatedUser = { ...currentUser, wallet_balance: data.user.wallet_balance, registrations: data.registrations };
                 localStorage.setItem("user", JSON.stringify(updatedUser)); 
                 onRegister(updatedUser); 
                 alert(`Success! Team Registered.`); 
@@ -413,68 +276,73 @@ const TournamentRegistration = ({ onRegister }) => {
         }
     };
 
+    const handlePayment = async (mode, scope) => {
+        const user = JSON.parse(localStorage.getItem("user"));
+        if (tournament.format === "Doubles" && !partnerId) { alert("This is a Doubles Event. Please enter your Partner's Team ID."); return; }
+
+        let amountNeeded = scope === "TEAM" ? (selectedCat.fee * 2) : selectedCat.fee;
+
+        // CHECK BALANCE
+        if (user.wallet_balance < amountNeeded) {
+            const shortfall = amountNeeded - user.wallet_balance;
+            const confirmPay = confirm(`Insufficient Wallet Balance (₹${user.wallet_balance}). \nAdd ₹${shortfall} via Razorpay to continue?`);
+            if(!confirmPay) return;
+
+            setLoading(true);
+            const scriptLoaded = await loadRazorpayScript();
+            if(!scriptLoaded) { alert("Razorpay failed to load"); setLoading(false); return; }
+
+            try {
+                const orderRes = await fetch(`${API_URL}/razorpay/create-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: shortfall }) });
+                const orderData = await orderRes.json();
+                if (!orderRes.ok) throw new Error("Order creation failed");
+
+                const options = {
+                    key: orderData.key_id, amount: orderData.amount, currency: "INR",
+                    name: "Playtomic Club28", description: `Top-up for ${tournament.name}`,
+                    order_id: orderData.order_id,
+                    handler: async function (response) {
+                        const verifyRes = await fetch(`${API_URL}/razorpay/verify-payment`, {
+                            method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ razorpay_payment_id: response.razorpay_payment_id, razorpay_order_id: response.razorpay_order_id, razorpay_signature: response.razorpay_signature, team_id: user.team_id, amount: shortfall })
+                        });
+                        const verifyData = await verifyRes.json();
+                        if (verifyRes.ok) {
+                            const updatedUser = { ...user, wallet_balance: verifyData.new_balance };
+                            localStorage.setItem("user", JSON.stringify(updatedUser));
+                            // RECURSE to register now that we have money
+                            performRegistration(updatedUser, mode, scope);
+                        } else { alert("Verification Failed"); setLoading(false); }
+                    },
+                    theme: { color: "#2563EB" }
+                };
+                const rzp = new window.Razorpay(options);
+                rzp.open();
+            } catch(e) { console.error(e); alert("Payment Error"); setLoading(false); }
+            return;
+        }
+
+        // If Balance Enough, Proceed
+        performRegistration(user, mode, scope);
+    };
+
     if (!tournament || !selectedCat) return <div className="p-10 text-center text-gray-500">Loading Event...</div>;
-    
-    const prizes = [ 
-        { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, 
-        { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, 
-        { rank: '3rd', amount: selectedCat.p3, icon: '🥉' },
-        { rank: 'Per Match Win', amount: selectedCat.per_match || 0, icon: '💰' } 
-    ];
-    
+    const prizes = [ { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, { rank: '3rd', amount: selectedCat.p3, icon: '🥉' }, { rank: 'Per Match Win', amount: selectedCat.per_match || 0, icon: '💰' } ];
     const perPersonFee = selectedCat.fee;
     const teamFee = selectedCat.fee * 2;
     const isDoubles = tournament.format === "Doubles";
 
     return (
         <div className="bg-white min-h-screen pb-40"><div className="bg-blue-600 p-6 pt-12 pb-12 text-white rounded-b-[40px] shadow-lg"><button onClick={() => navigate('/compete')} className="mb-6 bg-white/20 p-2 rounded-full"><ArrowLeft size={24}/></button><h1 className="text-3xl font-black italic uppercase mb-2">{tournament.name}</h1><p className="text-blue-100 font-bold text-xs uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> {tournament.city} • {tournament.sport} <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] ml-2">{tournament.format || "Singles"}</span></p></div>
-        
         <div className="p-6 -mt-8">
-            
-            {tournament.about && (
-                <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
-                    <div className="flex items-center gap-2 mb-4"><Info className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">About Event</h3></div>
-                    <p className="text-sm text-gray-600 leading-relaxed font-medium">{tournament.about}</p>
-                </div>
-            )}
-
+            {tournament.about && (<div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6"><div className="flex items-center gap-2 mb-4"><Info className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">About Event</h3></div><p className="text-sm text-gray-600 leading-relaxed font-medium">{tournament.about}</p></div>)}
             <div className="bg-white p-6 rounded-[30px] shadow-xl border border-gray-100 mb-6"><h3 className="font-bold text-sm uppercase tracking-widest mb-4 text-gray-400">Select Level</h3><div className="space-y-3">{categories.map((cat, idx) => (<button key={idx} onClick={() => setSelectedCat(cat)} className={`w-full p-4 rounded-xl flex justify-between items-center transition-all ${selectedCat.name === cat.name ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 transform scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}><div className="text-left"><span className="font-bold text-sm block">{cat.name}</span><span className="text-[10px] font-bold opacity-70">Per Person: ₹{cat.fee}</span></div>{selectedCat.name === cat.name && <CheckCircle size={18}/>}</button>))}</div></div>
-            
-            {isDoubles && (
-                <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
-                    <div className="flex items-center gap-2 mb-4"><UserPlus className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Doubles Partner</h3></div>
-                    <input 
-                        value={partnerId} 
-                        onChange={(e) => setPartnerId(e.target.value.toUpperCase())}
-                        placeholder="Enter Partner's Team ID (e.g. SA25)" 
-                        className="w-full p-4 bg-gray-50 rounded-xl font-bold border border-gray-200 outline-none focus:border-blue-500 transition-all uppercase"
-                    />
-                </div>
-            )}
-
-            <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
-                <div className="flex items-center gap-2 mb-4"><Calendar className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Schedule & Venue</h3></div>
-                {schedule.length > 0 && (<div className="mb-6 bg-gray-50 rounded-xl p-4">{schedule.map((row, idx) => (<div key={idx} className="flex justify-between text-sm py-2 border-b border-gray-200 last:border-0"><span className="font-bold text-gray-500 w-1/3">{row.label}</span><span className="font-black text-gray-800 text-right flex-1">{row.value}</span></div>))}</div>)}
-                {tournament.venue && (<div className="flex items-start gap-3"><MapPin className="text-gray-400 mt-1" size={16} /><p className="text-xs font-bold text-gray-600 leading-relaxed">{tournament.venue}</p></div>)}
-            </div>
-            
+            {isDoubles && (<div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6"><div className="flex items-center gap-2 mb-4"><UserPlus className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Doubles Partner</h3></div><input value={partnerId} onChange={(e) => setPartnerId(e.target.value.toUpperCase())} placeholder="Enter Partner's Team ID (e.g. SA25)" className="w-full p-4 bg-gray-50 rounded-xl font-bold border border-gray-200 outline-none focus:border-blue-500 transition-all uppercase"/></div>)}
+            <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6"><div className="flex items-center gap-2 mb-4"><Calendar className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">Schedule & Venue</h3></div>{schedule.length > 0 && (<div className="mb-6 bg-gray-50 rounded-xl p-4">{schedule.map((row, idx) => (<div key={idx} className="flex justify-between text-sm py-2 border-b border-gray-200 last:border-0"><span className="font-bold text-gray-500 w-1/3">{row.label}</span><span className="font-black text-gray-800 text-right flex-1">{row.value}</span></div>))}</div>)}{tournament.venue && (<div className="flex items-start gap-3"><MapPin className="text-gray-400 mt-1" size={16} /><p className="text-xs font-bold text-gray-600 leading-relaxed">{tournament.venue}</p></div>)}</div>
             <div className="bg-blue-50 p-6 rounded-[30px] border border-blue-100 mb-24"><div className="flex items-center gap-3 mb-6"><Trophy className="text-yellow-500" size={24} fill="currentColor"/><div><span className="block font-black text-lg text-blue-900 uppercase italic">Prize Pool</span><span className="text-[10px] font-bold text-blue-400 uppercase">{selectedCat.name} Only</span></div></div><div className="space-y-3">{prizes.map((p, i) => (<div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm"><span className="font-bold text-gray-500 text-xs uppercase flex items-center gap-2"><span className="text-lg">{p.icon}</span> {p.rank} Place</span><span className="font-black text-lg text-blue-600">₹{p.amount}</span></div>))}</div></div>
         </div>
-        
-        {/* PAYMENT OPTIONS */}
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-6 rounded-t-[30px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50">
-            {isDoubles ? (
-                <>
-                <div className="mb-4">
-                     <button onClick={() => handlePayment("WALLET", "INDIVIDUAL")} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all mb-2">Pay My Share (₹{perPersonFee})</button>
-                     <p className="text-[9px] text-gray-400 text-center font-bold flex items-center justify-center gap-1"><AlertCircle size={10}/> No refund if partner doesn't join.</p>
-                </div>
-                <button onClick={() => handlePayment("WALLET", "TEAM")} className="w-full bg-black text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-all">Pay Full Team (₹{teamFee})</button>
-                </>
-            ) : (
-                <button onClick={() => handlePayment("WALLET", "INDIVIDUAL")} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all">Pay Entry (₹{perPersonFee})</button>
-            )}
-            
+            {isDoubles ? (<><div className="mb-4"><button onClick={() => handlePayment("WALLET", "INDIVIDUAL")} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all mb-2">Pay My Share (₹{perPersonFee})</button><p className="text-[9px] text-gray-400 text-center font-bold flex items-center justify-center gap-1"><AlertCircle size={10}/> No refund if partner doesn't join.</p></div><button onClick={() => handlePayment("WALLET", "TEAM")} className="w-full bg-black text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-all">Pay Full Team (₹{teamFee})</button></>) : (<button onClick={() => handlePayment("WALLET", "INDIVIDUAL")} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase text-xs shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all">Pay Entry (₹{perPersonFee})</button>)}
             <div className="text-center mt-3"><p className="text-[10px] text-green-600 font-bold uppercase bg-green-50 px-2 py-1 rounded inline-block">Wallet: ₹{JSON.parse(localStorage.getItem("user"))?.wallet_balance || 0}</p></div>
         </div>
     </div>
@@ -589,7 +457,6 @@ const HomePage = ({ user, onRefresh }) => {
   return (
     <div className="pb-24 bg-gray-50 min-h-screen font-sans text-gray-900">
         
-        {/* NOTIFICATION CENTER (Modal Version) */}
         <NotificationCenter 
             isOpen={showNotifications} 
             onClose={() => setShowNotifications(false)} 
@@ -598,7 +465,6 @@ const HomePage = ({ user, onRefresh }) => {
             city={viewCity}
         />
 
-        {/* BLUE HEADER */}
         <div className="bg-blue-600 p-6 pt-12 pb-20 rounded-b-[40px] shadow-lg mb-[-40px]">
             <div className="flex justify-between items-center mb-6 text-white">
                 <h1 className="text-xl font-extrabold italic tracking-wide">PLAYTOMIC</h1>
@@ -611,7 +477,6 @@ const HomePage = ({ user, onRefresh }) => {
                 </div>
             </div>
 
-            {/* User Info & Dropdown */}
             <div className="flex justify-between items-center text-white">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-xl">{user?.name?.charAt(0)}</div>
@@ -628,16 +493,12 @@ const HomePage = ({ user, onRefresh }) => {
             </div>
         </div>
         
-        {/* Wallet Stats Card */}
         <div className="mx-6 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 flex justify-between items-center relative z-10 mb-8"><div className="text-center flex-1 border-r border-gray-100"><p className="text-[10px] text-gray-400 font-bold uppercase">Wallet</p><p className="text-xl font-black text-gray-800">₹{user?.wallet_balance || 0}</p></div><div className="text-center flex-1"><p className="text-[10px] text-gray-400 font-bold uppercase">Matches</p><p className="text-xl font-black text-gray-800">0</p></div></div>
         
-        {/* Quick Actions */}
         <div className="px-6 grid grid-cols-4 gap-4 text-center mb-4">{['Book Court', 'Learn', 'Compete', 'Find Match'].map((item, i) => (<div key={i} onClick={() => handleQuickAction(item)} className="flex flex-col items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 transition-transform"><div className={`w-14 h-14 rounded-full shadow-sm border border-gray-100 flex items-center justify-center ${item === 'Compete' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-600'}`}>{item === 'Compete' ? <Trophy size={24} /> : <div className="w-6 h-6 bg-blue-100 rounded-full"/>}</div><span className="text-[10px] font-bold text-gray-600">{item}</span></div>))}</div>
     
-        {/* Pending Requests */}
         {pendingRequests.length > 0 && (<div className="mx-6 mb-4"><h3 className="font-bold text-gray-700 text-xs uppercase mb-2">Pending Requests</h3>{pendingRequests.map(req => (<div key={req.reg_id} className="bg-orange-50 border border-orange-200 p-4 rounded-xl mb-2 flex justify-between items-center"><div><p className="text-xs font-bold text-orange-800 uppercase">{req.tournament} ({req.level})</p><p className="text-[10px] text-gray-600">Invited by <b>{req.partner}</b></p></div><button onClick={() => handleConfirmPartner(req.reg_id)} className="bg-orange-500 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm">Pay ₹{req.fee_share} & Join</button></div>))}</div>)}
 
-        {/* Ongoing Event Component */}
         {currentRegistration ? (
             <OngoingEvents category={viewName} city={viewCity} level={currentRegistration.level} myTeamID={user?.team_id} />
         ) : (
@@ -646,10 +507,7 @@ const HomePage = ({ user, onRefresh }) => {
             </div>
         )}
 
-        {/* --- 5. INLINE UPDATES SECTION (Filtered by View) --- */}
         <InlineUpdatesSection teamId={user?.team_id} tournament={viewName} city={viewCity} />
-
-        {/* --- 6. EARNINGS TRACKER (Filtered by View) --- */}
         <EarningsTracker teamId={user?.team_id} tournament={viewName} />
 
     </div>
@@ -672,113 +530,54 @@ const ProfilePage = ({ user, onLogout }) => {
 
     const handleSave = async () => { const res = await fetch(`${API_URL}/user/update-profile`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, email: formData.email, gender: formData.gender, dob: formData.dob, play_location: formData.play_location }) }); if(res.ok) { alert("Profile Updated!"); setEditMode(false); window.location.reload(); } };
     
-    // --- UPDATED: RAZORPAY INTEGRATION ---
+    // --- UPDATED: RAZORPAY INTEGRATION (Profile Add Money) ---
     const handleAddMoney = async () => {
         const amountStr = prompt("Enter amount to add (₹):", "100");
         if (!amountStr) return;
         const amount = parseInt(amountStr);
 
-        // 1. Load Razorpay SDK
         const res = await loadRazorpayScript();
-        if (!res) {
-            alert("Razorpay SDK failed to load. Are you online?");
-            return;
-        }
+        if (!res) { alert("Razorpay SDK failed to load."); return; }
 
-        // 2. Create Order on Backend
         try {
-            const orderRes = await fetch(`${API_URL}/razorpay/create-order`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ amount: amount }),
-            });
+            const orderRes = await fetch(`${API_URL}/razorpay/create-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: amount }), });
             const orderData = await orderRes.json();
+            if (!orderRes.ok) { alert("Error creating order"); return; }
 
-            if (!orderRes.ok) {
-                alert("Error creating order");
-                return;
-            }
-
-            // 3. Open Razorpay Checkout
             const options = {
-                key: orderData.key_id, 
-                amount: amount * 100, 
-                currency: "INR",
-                name: "Playtomic Club28",
-                description: "Wallet Top-up",
-                image: "https://via.placeholder.com/150", 
+                key: orderData.key_id, amount: amount * 100, currency: "INR",
+                name: "Playtomic Club28", description: "Wallet Top-up",
                 order_id: orderData.order_id,
                 handler: async function (response) {
-                    // 4. Verify Payment on Backend
                     try {
                         const verifyRes = await fetch(`${API_URL}/razorpay/verify-payment`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                razorpay_payment_id: response.razorpay_payment_id,
-                                razorpay_order_id: response.razorpay_order_id,
-                                razorpay_signature: response.razorpay_signature,
-                                team_id: user.team_id,
-                                amount: amount
-                            }),
+                            method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ razorpay_payment_id: response.razorpay_payment_id, razorpay_order_id: response.razorpay_order_id, razorpay_signature: response.razorpay_signature, team_id: user.team_id, amount: amount }),
                         });
                         const verifyData = await verifyRes.json();
-                        
-                        if (verifyRes.ok) {
-                            alert(`Payment Successful! New Balance: ₹${verifyData.new_balance}`);
-                            window.location.reload();
-                        } else {
-                            alert("Payment Verification Failed");
-                        }
-                    } catch (error) {
-                        alert("Server error during verification");
-                    }
+                        if (verifyRes.ok) { alert(`Payment Successful! New Balance: ₹${verifyData.new_balance}`); window.location.reload(); } 
+                        else { alert("Payment Verification Failed"); }
+                    } catch (error) { alert("Server error during verification"); }
                 },
-                prefill: {
-                    name: user.name,
-                    contact: user.phone,
-                    email: user.email || "player@example.com"
-                },
-                theme: {
-                    color: "#2563EB", // Blue
-                },
+                prefill: { name: user.name, contact: user.phone, email: user.email || "player@example.com" },
+                theme: { color: "#2563EB" },
             };
-
             const paymentObject = new window.Razorpay(options);
             paymentObject.open();
-
-        } catch (err) {
-            console.error(err);
-            alert("Something went wrong");
-        }
+        } catch (err) { console.error(err); alert("Something went wrong"); }
     };
 
-    // --- WITHDRAW FUNCTION ---
     const handleWithdraw = async () => {
         const amount = prompt("Enter amount to withdraw:", "500");
         if(!amount) return;
         try {
-            const res = await fetch(`${API_URL}/user/withdraw`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) })
-            });
+            const res = await fetch(`${API_URL}/user/withdraw`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) }) });
             const data = await res.json();
-            if(res.ok) {
-                alert(`₹${amount} withdrawal requested!`);
-                window.location.reload();
-            } else {
-                alert("Withdrawal Failed: " + data.detail);
-            }
+            if(res.ok) { alert(`₹${amount} withdrawal requested!`); window.location.reload(); } else { alert("Withdrawal Failed: " + data.detail); }
         } catch(e) { alert("Error connecting to server"); }
     };
 
-    // --- COLOR LOGIC FOR TRANSACTIONS ---
-    const getAmountColor = (t) => {
-        if (t.type === "CREDIT") return "text-green-600";
-        if (t.mode === "WITHDRAWAL") return "text-red-500";
-        return "text-pink-500"; // EVENT_FEE
-    };
+    const getAmountColor = (t) => { if (t.type === "CREDIT") return "text-green-600"; if (t.mode === "WITHDRAWAL") return "text-red-500"; return "text-pink-500"; };
 
     return (
         <div className="pb-24 bg-white min-h-screen font-sans"><div className="bg-blue-600 text-white p-8 pt-12 rounded-b-[40px] shadow-lg mb-8"><div className="flex items-center gap-4 mb-6"><div className="w-16 h-16 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-2xl shadow-inner">{user?.name?.charAt(0) || "P"}</div><div><h1 className="text-2xl font-bold">{user?.name || "Player"}</h1><p className="text-xs opacity-80">Team ID: {user?.team_id}</p><p className="text-xs font-bold bg-blue-700 px-2 py-1 rounded inline-block mt-1">₹{user?.wallet_balance}</p></div></div><div className="flex bg-blue-700 p-1 rounded-xl">{['INFO', 'WALLET', 'HISTORY'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === tab ? 'bg-white text-blue-600 shadow' : 'text-blue-200'}`}>{tab}</button>))}</div></div><div className="p-6">{activeTab === "INFO" && (<div className="space-y-4"><h3 className="font-black text-lg text-gray-800 flex items-center gap-2"><User size={20}/> Personal Information</h3><div className="grid gap-3"><div><label className="text-[10px] font-bold text-gray-400 uppercase">Email</label><input disabled={!editMode} value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Gender</label><select disabled={!editMode} value={formData.gender} onChange={e=>setFormData({...formData, gender: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Date of Birth</label><input type="date" disabled={!editMode} value={formData.dob} onChange={e=>setFormData({...formData, dob: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Where do you play?</label><input disabled={!editMode} value={formData.play_location} onChange={e=>setFormData({...formData, play_location: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div></div>{editMode ? (<button onClick={handleSave} className="w-full bg-green-600 text-white p-4 rounded-xl font-black uppercase flex items-center justify-center gap-2 shadow-lg"><Save size={18}/> Save Changes</button>) : (<button onClick={() => setEditMode(true)} className="w-full bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg">Edit Profile</button>)}</div>)}{activeTab === "WALLET" && (<div className="text-center mb-8"><Wallet size={48} className="mx-auto text-blue-200 mb-4"/><h2 className="text-4xl font-black text-gray-800 mb-2">₹{user?.wallet_balance}</h2><p className="text-xs font-bold text-gray-400 uppercase mb-4">Current Balance</p><div className="flex gap-2 mb-4"><button onClick={handleAddMoney} className="flex-1 bg-black text-white p-4 rounded-xl font-black uppercase shadow-lg">Add Money +</button><button onClick={handleWithdraw} className="flex-1 bg-gray-100 text-gray-800 p-4 rounded-xl font-black uppercase shadow-sm border border-gray-200 hover:bg-gray-200">Withdraw -</button></div><h3 className="font-bold text-gray-700 text-xs uppercase mb-3 flex items-center gap-2"><RefreshCw size={14}/> Recent Transactions</h3><div className="space-y-3">{transactions.length > 0 ? (transactions.map(t => (<div key={t.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100"><div><p className="font-bold text-gray-800 text-xs">{t.description}</p><p className="text-[10px] text-gray-400 uppercase">{new Date(t.date).toLocaleDateString()}</p></div><p className={`font-black text-sm ${getAmountColor(t)}`}>{t.type === "CREDIT" ? "+" : "-"}₹{t.amount}</p></div>))) : (<p className="text-center text-gray-400 text-xs">No transactions yet.</p>)}</div></div>)}{activeTab === "HISTORY" && (<div><h3 className="font-black text-lg text-gray-800 flex items-center gap-2 mb-4"><FileText size={20}/> Match History</h3>{history.length > 0 ? (<div className="space-y-2">{history.map(m => (<div key={m.id} className="bg-gray-50 p-4 rounded-xl flex justify-between items-center border border-gray-100"><div><p className="text-[10px] font-bold text-gray-400 uppercase">{m.date}</p><p className="font-black text-sm">{m.t1} vs {m.t2}</p></div><div className="text-right"><p className="font-black text-lg text-blue-600">{m.score || "-"}</p><p className="text-[9px] font-bold text-gray-400 uppercase">{m.status}</p></div></div>))}</div>) : (<p className="text-center text-gray-400 text-xs font-bold mt-10">No matches played yet.</p>)}</div>)}<div className="mt-12 pt-12 border-t border-gray-100"><button onClick={onLogout} className="w-full bg-red-50 text-red-500 p-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-all"><LogOut size={16}/> Log Out</button></div></div></div>
