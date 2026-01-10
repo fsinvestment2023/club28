@@ -8,6 +8,7 @@ import json
 import random
 import re
 from sqlalchemy import desc
+import razorpay  # NEW IMPORT
 
 Base.metadata.create_all(bind=engine)
 
@@ -20,6 +21,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- RAZORPAY CONFIGURATION (PASTE YOUR KEYS HERE) ---
+RAZORPAY_KEY_ID = "rzp_test_S2LE18azXpy1S8"
+RAZORPAY_KEY_SECRET = "X49kd6GkawnQWTU23KKNVhnz"
+
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 def get_db():
     db = SessionLocal()
@@ -91,7 +98,71 @@ class PasswordResetRequest(BaseModel): phone: str; new_password: str
 class ClubInfoUpdate(BaseModel): section: str; content: str
 class SystemNotifCreate(BaseModel): type: str; title: str; message: str
 
+# NEW: Razorpay Schemas
+class RazorpayOrder(BaseModel):
+    amount: int  # Amount in Rupees
+
+class RazorpayVerify(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
+    team_id: str
+    amount: int # Amount in Rupees
+
 # --- ENDPOINTS ---
+
+# --- NEW: RAZORPAY ENDPOINTS ---
+@app.post("/razorpay/create-order")
+def create_razorpay_order(data: RazorpayOrder):
+    try:
+        # Razorpay takes amount in PAISE (1 Rupee = 100 Paise)
+        amount_in_paise = data.amount * 100
+        
+        order_data = {
+            "amount": amount_in_paise,
+            "currency": "INR",
+            "receipt": f"receipt_{random.randint(1000, 9999)}",
+            "payment_capture": 1 # Auto capture
+        }
+        
+        order = razorpay_client.order.create(data=order_data)
+        return {"status": "created", "order_id": order["id"], "key_id": RAZORPAY_KEY_ID}
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/razorpay/verify-payment")
+def verify_razorpay_payment(data: RazorpayVerify, db: Session = Depends(get_db)):
+    # 1. Verify Signature
+    try:
+        params_dict = {
+            'razorpay_order_id': data.razorpay_order_id,
+            'razorpay_payment_id': data.razorpay_payment_id,
+            'razorpay_signature': data.razorpay_signature
+        }
+        razorpay_client.utility.verify_payment_signature(params_dict)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid Payment Signature")
+
+    # 2. If signature matches, Credit the User's Wallet
+    user = db.query(models.User).filter(models.User.team_id == data.team_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.wallet_balance += data.amount
+    
+    # Log Transaction
+    db.add(models.Transaction(
+        user_id=user.id, 
+        amount=data.amount, 
+        type="CREDIT", 
+        mode="WALLET_TOPUP", 
+        description=f"Razorpay Add: {data.razorpay_payment_id}"
+    ))
+    db.commit()
+    
+    return {"status": "success", "new_balance": user.wallet_balance}
+# -------------------------------
 
 @app.post("/send-otp")
 def send_otp(data: OTPRequest): return {"status": "sent", "otp": "1234"}
@@ -155,22 +226,16 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
     final_feed = []
 
     # --- 1. PERSONAL TAB ---
-    # Rule: Welcome Msg (from Fee Payment) + Upcoming Matches.
-    # REMOVED: Top-up, Withdrawal, Prize Money.
     personal_items = []
     
     # A. "Welcome" Notifications (Derived from EVENT_FEE transactions)
-    # We use the transaction history to know WHEN they joined, but change the text.
     txns_query = db.query(models.Transaction).filter(
         models.Transaction.user_id == user.id,
-        models.Transaction.mode == "EVENT_FEE" # Only look for Fees
+        models.Transaction.mode == "EVENT_FEE" 
     ).order_by(models.Transaction.date.desc()).limit(10).all()
 
     for t in txns_query:
-        # Extract Tournament Name (e.g. "Fee: PADEL" -> "PADEL")
         tourney_name = t.description.replace("Fee: ", "").strip()
-        
-        # Filter Logic: If viewing specific tournament, hide others
         if tournament and (tournament not in tourney_name): continue
         
         personal_items.append({
@@ -178,8 +243,8 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
             "tab": "PERSONAL",
             "title": "Registration Successful",
             "message": f"Welcome to the {tourney_name} League!",
-            "sub_text": t.date.strftime("%d %b"), # Date
-            "time": t.date.strftime("%I:%M %p"), # Time
+            "sub_text": t.date.strftime("%d %b"), 
+            "time": t.date.strftime("%I:%M %p"), 
             "sort_key": t.date.timestamp()
         })
 
@@ -188,7 +253,6 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
         (models.Match.t1.contains(team_id) | models.Match.t2.contains(team_id)),
         models.Match.status == "Scheduled"
     )
-    # Apply strict filter if tournament/city provided
     if tournament and city:
         match_query = match_query.filter(models.Match.category == tournament, models.Match.city == city)
     
@@ -203,16 +267,14 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
             "message": f"Vs {opponent}",
             "sub_text": f"Scheduled: {m.date} @ {m.time}",
             "time": m.time,
-            "sort_key": 9999999999 # Prioritize matches (Keep them at top)
+            "sort_key": 9999999999 
         })
     
-    # Sort by Newest and Limit to 10
     personal_items.sort(key=lambda x: x['sort_key'], reverse=True)
     final_feed.extend(personal_items[:10])
 
 
     # --- 2. EVENT TAB ---
-    # Rule: Universal Post Match Updates. Filtered by selected event. Max 10.
     event_items = []
     
     event_match_query = db.query(models.Match).filter(models.Match.status == "Official")
@@ -237,10 +299,8 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
 
 
     # --- 3. COMMUNITY TAB ---
-    # Rule: New Events & Manual Announcements. ALWAYS GLOBAL. Max 10.
     community_items = []
 
-    # A. New Tournaments
     new_tourneys = db.query(models.Tournament).order_by(models.Tournament.id.desc()).limit(5).all()
     for t in new_tourneys:
         community_items.append({
@@ -253,7 +313,6 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
             "sort_key": t.id * 1000
         })
 
-    # B. Manual Admin Notifications
     manual_notifs = db.query(models.Notification).filter(
         models.Notification.type == "COMMUNITY"
     ).order_by(models.Notification.created_at.desc()).limit(5).all()
@@ -269,7 +328,6 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
             "sort_key": n.created_at.timestamp()
         })
 
-    # Sort and Limit to 10
     community_items.sort(key=lambda x: x['sort_key'], reverse=True)
     final_feed.extend(community_items[:10])
 
@@ -511,7 +569,6 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
     standings.sort(key=lambda x: x['points'], reverse=True)
     return standings
 
-# --- UPDATED: EARNINGS TRACKER ENDPOINT ---
 @app.get("/user/{team_id}/transactions")
 def get_user_transactions(team_id: str, tournament: str = None, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
@@ -523,8 +580,6 @@ def get_user_transactions(team_id: str, tournament: str = None, db: Session = De
     if tournament:
         filtered_txns = []
         for t in all_txns:
-            # Simple substring check: Does the transaction description contain the tournament name?
-            # e.g. "Fee: Padel", "Match Win: Padel", etc.
             if tournament in t.description:
                 filtered_txns.append(t)
         return filtered_txns

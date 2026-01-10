@@ -5,6 +5,17 @@ import Dashboard from './Dashboard.jsx';
 
 const API_URL = "http://127.0.0.1:8000";
 
+// --- RAZORPAY HELPER ---
+const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+        const script = document.createElement("script");
+        script.src = "https://checkout.razorpay.com/v1/checkout.js";
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+};
+
 // --- NOTIFICATION CENTER (MODAL VERSION) ---
 const NotificationCenter = ({ isOpen, onClose, teamId, tournament, city }) => {
     const [activeTab, setActiveTab] = useState("PERSONAL");
@@ -155,6 +166,7 @@ const EarningsTracker = ({ teamId, tournament }) => {
         if(teamId) {
             setLoading(true);
             let url = `${API_URL}/user/${teamId}/transactions`;
+            // Add tournament filter parameter
             if (tournament) {
                 url += `?tournament=${encodeURIComponent(tournament)}`;
             }
@@ -644,7 +656,6 @@ const HomePage = ({ user, onRefresh }) => {
   );
 };
 
-// --- ADDED MISSING PROFILE PAGE COMPONENT ---
 const ProfilePage = ({ user, onLogout }) => {
     const [activeTab, setActiveTab] = useState("INFO");
     const [editMode, setEditMode] = useState(false);
@@ -660,7 +671,87 @@ const ProfilePage = ({ user, onLogout }) => {
     }, [user]);
 
     const handleSave = async () => { const res = await fetch(`${API_URL}/user/update-profile`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, email: formData.email, gender: formData.gender, dob: formData.dob, play_location: formData.play_location }) }); if(res.ok) { alert("Profile Updated!"); setEditMode(false); window.location.reload(); } };
-    const handleAddMoney = async () => { const amount = prompt("Enter amount to add (Simulated Razorpay):", "500"); if(!amount) return; const res = await fetch(`${API_URL}/admin/add-wallet`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) }) }); if(res.ok) { alert(`₹${amount} added successfully! (Simulated)`); window.location.reload(); } };
+    
+    // --- UPDATED: RAZORPAY INTEGRATION ---
+    const handleAddMoney = async () => {
+        const amountStr = prompt("Enter amount to add (₹):", "100");
+        if (!amountStr) return;
+        const amount = parseInt(amountStr);
+
+        // 1. Load Razorpay SDK
+        const res = await loadRazorpayScript();
+        if (!res) {
+            alert("Razorpay SDK failed to load. Are you online?");
+            return;
+        }
+
+        // 2. Create Order on Backend
+        try {
+            const orderRes = await fetch(`${API_URL}/razorpay/create-order`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ amount: amount }),
+            });
+            const orderData = await orderRes.json();
+
+            if (!orderRes.ok) {
+                alert("Error creating order");
+                return;
+            }
+
+            // 3. Open Razorpay Checkout
+            const options = {
+                key: orderData.key_id, 
+                amount: amount * 100, 
+                currency: "INR",
+                name: "Playtomic Club28",
+                description: "Wallet Top-up",
+                image: "https://via.placeholder.com/150", 
+                order_id: orderData.order_id,
+                handler: async function (response) {
+                    // 4. Verify Payment on Backend
+                    try {
+                        const verifyRes = await fetch(`${API_URL}/razorpay/verify-payment`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_signature: response.razorpay_signature,
+                                team_id: user.team_id,
+                                amount: amount
+                            }),
+                        });
+                        const verifyData = await verifyRes.json();
+                        
+                        if (verifyRes.ok) {
+                            alert(`Payment Successful! New Balance: ₹${verifyData.new_balance}`);
+                            window.location.reload();
+                        } else {
+                            alert("Payment Verification Failed");
+                        }
+                    } catch (error) {
+                        alert("Server error during verification");
+                    }
+                },
+                prefill: {
+                    name: user.name,
+                    contact: user.phone,
+                    email: user.email || "player@example.com"
+                },
+                theme: {
+                    color: "#2563EB", // Blue
+                },
+            };
+
+            const paymentObject = new window.Razorpay(options);
+            paymentObject.open();
+
+        } catch (err) {
+            console.error(err);
+            alert("Something went wrong");
+        }
+    };
 
     // --- WITHDRAW FUNCTION ---
     const handleWithdraw = async () => {
