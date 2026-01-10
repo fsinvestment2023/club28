@@ -81,3 +81,10 @@ class Match(Base):
     time = Column(String)
     stage = Column(String, default="Group")
     submitted_by_team = Column(String, default=None)
+
+# NEW TABLE FOR APP CONTENT
+class ClubInfo(Base):
+    __tablename__ = "club_info"
+    id = Column(Integer, primary_key=True, index=True)
+    section_name = Column(String, unique=True) # e.g. "OUR_AIM"
+    content = Column(String)

@@ -63,6 +63,9 @@ class AdminAddPlayer(BaseModel): name: str; phone: str; category: str; city: str
 class UserProfileUpdate(BaseModel): team_id: str; email: str; gender: str; dob: str; play_location: str
 class ConfirmPartnerRequest(BaseModel): reg_id: int; payment_mode: str
 class WithdrawRequest(BaseModel): team_id: str; amount: int
+# NEW SCHEMAS
+class PasswordResetRequest(BaseModel): phone: str; new_password: str
+class ClubInfoUpdate(BaseModel): section: str; content: str
 
 @app.post("/send-otp")
 def send_otp(data: OTPRequest): return {"status": "sent", "otp": "1234"}
@@ -86,6 +89,37 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
     reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
     return {"status": "success", "user": user, "registrations": reg_data}
+
+@app.post("/check-phone")
+def check_phone(data: OTPRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.phone == data.phone).first()
+    if not user: raise HTTPException(status_code=404, detail="Phone number not found")
+    return {"status": "exists", "otp": "1234"}
+
+@app.post("/reset-password")
+def reset_password(data: PasswordResetRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.phone == data.phone).first()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    user.password = data.new_password
+    db.commit()
+    return {"status": "success", "message": "Password updated"}
+
+# --- CLUB INFO / OUR AIM ENDPOINTS ---
+@app.get("/club-info/{section}")
+def get_club_info(section: str, db: Session = Depends(get_db)):
+    info = db.query(models.ClubInfo).filter(models.ClubInfo.section_name == section).first()
+    return {"content": info.content if info else ""}
+
+@app.post("/admin/update-club-info")
+def update_club_info(data: ClubInfoUpdate, db: Session = Depends(get_db)):
+    info = db.query(models.ClubInfo).filter(models.ClubInfo.section_name == data.section).first()
+    if not info:
+        info = models.ClubInfo(section_name=data.section, content=data.content)
+        db.add(info)
+    else:
+        info.content = data.content
+    db.commit()
+    return {"status": "updated"}
 
 @app.get("/user/{team_id}")
 def get_user_details(team_id: str, db: Session = Depends(get_db)):
@@ -436,7 +470,6 @@ def distribute_prize(match, winner_name, db):
     per_match_amt = safe_int(settings.get('per_match', 0))
     match_desc = f"Match Win (Match #{match.id})"
     
-    # REMOVED SAFETY CHECK: Will always pay if amount > 0
     if per_match_amt > 0:
         amount = per_match_amt // len(winner_ids)
         for tid in winner_ids:
@@ -450,7 +483,6 @@ def distribute_prize(match, winner_name, db):
         p1_amt = safe_int(settings.get('p1', 0))
         p1_desc = f"1st Place Prize: {match.category}"
         
-        # REMOVED SAFETY CHECK
         if p1_amt > 0:
             amount = p1_amt // len(winner_ids)
             for tid in winner_ids:
@@ -463,7 +495,6 @@ def distribute_prize(match, winner_name, db):
         p2_amt = safe_int(settings.get('p2', 0))
         p2_desc = f"2nd Place Prize: {match.category}"
         
-        # REMOVED SAFETY CHECK
         if loser_ids and p2_amt > 0:
             amount = p2_amt // len(loser_ids)
             for tid in loser_ids:
@@ -475,7 +506,6 @@ def distribute_prize(match, winner_name, db):
         p3_amt = safe_int(settings.get('p3', 0))
         p3_desc = f"3rd Place Prize: {match.category}"
         
-        # REMOVED SAFETY CHECK
         if p3_amt > 0:
             amount = p3_amt // len(winner_ids)
             for tid in winner_ids:

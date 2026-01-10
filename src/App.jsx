@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard, AlertCircle, RefreshCw, ArrowUpRight, Info } from 'lucide-react';
+import { Trophy, User, ChevronRight, Search, Bell, Home as HomeIcon, CheckCircle, LogOut, Activity, ChevronDown, ArrowLeft, MapPin, Calendar, Wallet, FileText, Save, UserPlus, CreditCard, AlertCircle, RefreshCw, ArrowUpRight, Info, HelpCircle } from 'lucide-react';
 import Dashboard from './Dashboard.jsx'; 
 
 // --- SHARED COMPONENTS ---
@@ -17,22 +17,17 @@ const BottomNav = () => {
   );
 };
 
-// --- UPDATED SCHEDULE COMPONENT (Fixed Layout) ---
 const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
     if (matches.length === 0) return <div className="p-8 text-center text-xs text-gray-400">No matches found.</div>;
-    
-    // Helper for systematic colors
     const getStageStyle = (stage) => {
         const s = (stage || "").toLowerCase();
-        if (s.includes("final") && !s.includes("semi") && !s.includes("quarter")) return "bg-yellow-100 text-yellow-800 border-yellow-200"; // Finals
+        if (s.includes("final") && !s.includes("semi") && !s.includes("quarter")) return "bg-yellow-100 text-yellow-800 border-yellow-200";
         if (s.includes("semi")) return "bg-purple-100 text-purple-700 border-purple-200";
         if (s.includes("quarter")) return "bg-blue-100 text-blue-700 border-blue-200";
         if (s.includes("3rd")) return "bg-orange-100 text-orange-800 border-orange-200";
-        return "bg-gray-100 text-gray-500 border-gray-200"; // Group Stage
+        return "bg-gray-100 text-gray-500 border-gray-200";
     };
-
     const byDate = matches.reduce((acc, m) => { if (!acc[m.date]) acc[m.date] = []; acc[m.date].push(m); return acc; }, {});
-    
     return (
         <div className="divide-y divide-gray-100">
             {Object.entries(byDate).map(([date, dayMatches]) => {
@@ -42,36 +37,13 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
                         <div className="bg-gray-50 px-4 py-2 border-y border-gray-100 flex justify-between items-center"><span className="font-black text-xs text-gray-800 uppercase">{new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span><span className="text-[9px] font-bold text-gray-400">{dayMatches.length} Games</span></div>
                         <div className="divide-y divide-gray-50">{Object.entries(byTime).map(([time, timeMatches], idx) => (
                                 <div key={idx} className="flex p-3 hover:bg-blue-50 transition-colors">
-                                    {/* Time Column: Fixed width, never shrinks */}
                                     <div className="w-10 pr-2 border-r border-gray-100 flex flex-col justify-center flex-shrink-0"><span className="text-xs font-black text-gray-900">{time.replace(":00 ", "")}</span><span className="text-[8px] font-bold text-gray-400 uppercase">{time.slice(-2)}</span></div>
-                                    
-                                    {/* Content Column: Grows but allowed to shrink (min-w-0) */}
                                     <div className="flex-1 grid grid-cols-1 gap-2 pl-3 min-w-0">{timeMatches.map((m, mIdx) => (
                                             <div key={mIdx} className="flex items-center justify-between w-full gap-2">
                                                 <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
-                                                    
-                                                    {/* STAGE LABEL: Fixed width, never shrinks */}
-                                                    <div className="flex-shrink-0">
-                                                        <span className={`text-[6px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wide ${getStageStyle(m.stage)}`}>
-                                                            {m.stage === "Group Stage" ? "GRP" : m.stage.substring(0, 4)}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* TEAMS: Allowed to truncate */}
-                                                    <div className="text-xs flex-1 truncate">
-                                                        {m.t1 === "TBD" ? (
-                                                            <div className="text-[9px] text-gray-400 italic font-bold">Waiting...</div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-1 truncate">
-                                                                <span className={`truncate ${m.t1.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}`}>{m.t1}</span>
-                                                                <span className="text-[8px] text-gray-300 font-bold flex-shrink-0">vs</span>
-                                                                <span className={`truncate ${m.t2.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}`}>{m.t2}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                    <div className="flex-shrink-0"><span className={`text-[6px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wide ${getStageStyle(m.stage)}`}>{m.stage === "Group Stage" ? "GRP" : m.stage.substring(0, 4)}</span></div>
+                                                    <div className="text-xs flex-1 truncate">{m.t1 === "TBD" ? (<div className="text-[9px] text-gray-400 italic font-bold">Waiting...</div>) : (<div className="flex items-center gap-1 truncate"><span className={`truncate ${m.t1.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}`}>{m.t1}</span><span className="text-[8px] text-gray-300 font-bold flex-shrink-0">vs</span><span className={`truncate ${m.t2.includes(myTeamID) ? "font-black text-blue-600" : "font-bold text-gray-700"}`}>{m.t2}</span></div>)}</div>
                                                 </div>
-                                                
-                                                {/* ACTION BUTTONS: Fixed width, never shrinks */}
                                                 {onAction && m.t1 !== "TBD" && <div className="flex-shrink-0 ml-1">{onAction(m)}</div>}
                                             </div>))}</div></div>))}</div></div>);})
             }</div>
@@ -80,17 +52,86 @@ const CompactScheduleList = ({ matches, myTeamID, onAction }) => {
 
 // --- AUTH PAGES ---
 const LoginPage = ({ onLogin }) => {
-  const [mode, setMode] = useState("LOGIN"); const [phone, setPhone] = useState(""); const [otp, setOtp] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [teamId, setTeamId] = useState(""); const [loading, setLoading] = useState(false); const API_URL = "http://127.0.0.1:8000";
-  const handleSendOtp = async (nextMode) => { if(phone.length < 10) return alert("Enter valid phone"); setLoading(true); try { await fetch(`${API_URL}/send-otp`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({phone})}); alert("OTP Sent: 1234"); setMode(nextMode); } catch(e) { alert("Server Error"); } setLoading(false); };
+  const [mode, setMode] = useState("LOGIN"); const [phone, setPhone] = useState(""); const [otp, setOtp] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [teamId, setTeamId] = useState(""); const [loading, setLoading] = useState(false); const [ourAim, setOurAim] = useState(""); const [showAim, setShowAim] = useState(false);
+  const API_URL = "http://127.0.0.1:8000";
+
+  useEffect(() => {
+      fetch(`${API_URL}/club-info/OUR_AIM`).then(res => res.json()).then(data => setOurAim(data.content));
+  }, []);
+
+  const handleSendOtp = async (nextMode, checkExists = false) => { 
+      if(phone.length < 10) return alert("Enter valid phone"); 
+      setLoading(true); 
+      try { 
+          const endpoint = checkExists ? '/check-phone' : '/send-otp';
+          const res = await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({phone})}); 
+          if(res.ok) { alert("OTP Sent: 1234"); setMode(nextMode); } 
+          else { alert(checkExists ? "Phone not found" : "Error sending OTP"); }
+      } catch(e) { alert("Server Error"); } 
+      setLoading(false); 
+  };
   const handleVerifyOtp = (nextMode) => { if(otp !== "1234") return alert("Wrong OTP (Hint: 1234)"); setMode(nextMode); };
+  
   const handleRegister = async () => { if(!name || !password) return alert("Fill all fields"); setLoading(true); try { const res = await fetch(`${API_URL}/register`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, name, password }) }); const data = await res.json(); if(res.ok) { alert(`Registration Success! Team ID: ${data.user.team_id}`); setTeamId(data.user.team_id); setMode("LOGIN"); } else { alert(data.detail); } } catch(e) { alert("Registration Error"); } setLoading(false); };
+  
+  const handleResetPassword = async () => {
+      setLoading(true);
+      try {
+          const res = await fetch(`${API_URL}/reset-password`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, new_password: password }) });
+          if(res.ok) { alert("Password Reset Success!"); setMode("LOGIN"); } else { alert("Failed"); }
+      } catch(e) { alert("Error"); }
+      setLoading(false);
+  };
+
   const handleSignIn = async () => { setLoading(true); try { const res = await fetch(`${API_URL}/login`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ team_id: teamId, password }) }); const data = await res.json(); if(res.ok) onLogin({ ...data.user, registrations: data.registrations }); else alert(data.detail); } catch (e) { alert("Login Failed: Is backend running?"); } setLoading(false); };
+  
   return (
-    <div className="min-h-screen bg-blue-600 p-8 text-white flex flex-col justify-center"><h1 className="text-4xl font-black mb-8 text-center italic">PLAYTOMIC</h1>
-        {mode === "LOGIN" && (<div className="space-y-4"><h2 className="font-bold text-xl mb-4">Player Login</h2><input placeholder="Team ID (e.g. SA99)" value={teamId} onChange={e=>setTeamId(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/><input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/><button onClick={handleSignIn} disabled={loading} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black uppercase">Login</button><div className="flex justify-between text-sm font-bold text-blue-200 mt-4"><button onClick={() => setMode("REGISTER_PHONE")}>Create Account</button></div></div>)}
+    <div className="min-h-screen bg-blue-600 p-8 text-white flex flex-col justify-center relative">
+        <h1 className="text-4xl font-black mb-8 text-center italic">PLAYTOMIC</h1>
+        
+        {/* --- LOGIN --- */}
+        {mode === "LOGIN" && (
+            <div className="space-y-4">
+                <h2 className="font-bold text-xl mb-4">Player Login</h2>
+                <input placeholder="Team ID (e.g. SA99)" value={teamId} onChange={e=>setTeamId(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/>
+                <input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl text-white font-bold placeholder:text-blue-200 outline-none"/>
+                
+                <button onClick={handleSignIn} disabled={loading} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black uppercase shadow-lg">Login</button>
+                
+                {/* UPDATED LAYOUT: Create Account & Forgot Password on same line */}
+                <div className="flex justify-between items-center text-xs font-bold text-blue-200 mt-4 px-2">
+                    <button onClick={() => setMode("REGISTER_PHONE")} className="hover:text-white">Create Account</button>
+                    <button onClick={() => setMode("FORGOT_PHONE")} className="hover:text-white">Forgot Password?</button>
+                </div>
+                
+                {ourAim && (
+                    <button onClick={() => setShowAim(true)} className="w-full mt-8 border border-blue-400 p-3 rounded-xl text-xs font-bold text-blue-100 flex items-center justify-center gap-2 hover:bg-blue-700 transition-all">
+                        <Info size={14}/> Read Our Mission
+                    </button>
+                )}
+            </div>
+        )}
+
+        {/* --- REGISTER FLOW --- */}
         {mode === "REGISTER_PHONE" && (<div><h2 className="font-bold text-xl mb-4">Register - Step 1</h2><input placeholder="Phone Number" value={phone} onChange={e=>setPhone(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={() => handleSendOtp("REGISTER_OTP")} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Get OTP</button><button onClick={() => setMode("LOGIN")} className="w-full mt-4 text-blue-200 font-bold text-sm">Cancel</button></div>)}
         {mode === "REGISTER_OTP" && (<div><h2 className="font-bold text-xl mb-4">Verify OTP</h2><p className="text-sm mb-4 opacity-80">Sent to {phone}</p><input placeholder="Enter 1234" value={otp} onChange={e=>setOtp(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none text-center tracking-widest"/><button onClick={() => handleVerifyOtp("REGISTER_FINAL")} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Verify</button></div>)}
         {mode === "REGISTER_FINAL" && (<div><h2 className="font-bold text-xl mb-4">Complete Profile</h2><input placeholder="Full Name" value={name} onChange={e=>setName(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><input type="password" placeholder="Create Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={handleRegister} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Finish Setup</button></div>)}
+
+        {/* --- FORGOT PASSWORD FLOW --- */}
+        {mode === "FORGOT_PHONE" && (<div><h2 className="font-bold text-xl mb-4">Reset Password</h2><p className="text-xs mb-4 text-blue-200">Enter your registered phone number.</p><input placeholder="Phone Number" value={phone} onChange={e=>setPhone(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={() => handleSendOtp("FORGOT_OTP", true)} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Send OTP</button><button onClick={() => setMode("LOGIN")} className="w-full mt-4 text-blue-200 font-bold text-sm">Cancel</button></div>)}
+        {mode === "FORGOT_OTP" && (<div><h2 className="font-bold text-xl mb-4">Verify Identity</h2><p className="text-sm mb-4 opacity-80">OTP sent to {phone}</p><input placeholder="Enter 1234" value={otp} onChange={e=>setOtp(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none text-center tracking-widest"/><button onClick={() => handleVerifyOtp("FORGOT_NEW_PASS")} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Verify</button></div>)}
+        {mode === "FORGOT_NEW_PASS" && (<div><h2 className="font-bold text-xl mb-4">New Password</h2><input type="password" placeholder="Create New Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-white/20 p-4 rounded-xl mb-4 font-bold outline-none"/><button onClick={handleResetPassword} className="w-full bg-white text-blue-600 p-4 rounded-xl font-black">Update Password</button></div>)}
+
+        {/* --- OUR AIM MODAL --- */}
+        {showAim && (
+            <div className="absolute inset-0 bg-blue-700 z-50 p-8 overflow-y-auto">
+                <button onClick={() => setShowAim(false)} className="absolute top-6 right-6 text-white font-bold">CLOSE X</button>
+                <h2 className="text-2xl font-black italic mb-6 mt-12 uppercase">Our Mission</h2>
+                <div className="text-sm font-medium leading-relaxed whitespace-pre-line text-blue-100">
+                    {ourAim || "Content coming soon..."}
+                </div>
+            </div>
+        )}
     </div>
   );
 };
@@ -152,7 +193,6 @@ const TournamentRegistration = ({ onRegister }) => {
 
     if (!tournament || !selectedCat) return <div className="p-10 text-center text-gray-500">Loading Event...</div>;
     
-    // UPDATED: Changed label to "Per Match Win"
     const prizes = [ 
         { rank: '1st', amount: selectedCat.p1, icon: '🥇' }, 
         { rank: '2nd', amount: selectedCat.p2, icon: '🥈' }, 
@@ -169,7 +209,6 @@ const TournamentRegistration = ({ onRegister }) => {
         
         <div className="p-6 -mt-8">
             
-            {/* UPDATED: Added About Event Section */}
             {tournament.about && (
                 <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-6">
                     <div className="flex items-center gap-2 mb-4"><Info className="text-blue-600" size={20}/><h3 className="font-black text-blue-900 text-lg italic uppercase">About Event</h3></div>

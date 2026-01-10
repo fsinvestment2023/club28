@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter, FileText, Info } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter, FileText, Info, Edit, Settings } from 'lucide-react';
 
 const Dashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -35,7 +35,7 @@ const Dashboard = () => {
   const [categories, setCategories] = useState([{ name: "Advance", fee: 2500, p1: 30000, p2: 15000, p3: 5000, per_match: 500 }]);
   const [drawSize, setDrawSize] = useState(16);
   const [eventVenue, setEventVenue] = useState("");
-  const [eventAbout, setEventAbout] = useState(""); // ADDED
+  const [eventAbout, setEventAbout] = useState(""); 
   const [eventSchedule, setEventSchedule] = useState([{ label: "", value: "" }]);
 
   const [manualName, setManualName] = useState("");
@@ -46,6 +46,8 @@ const Dashboard = () => {
   const [newMatchDate, setNewMatchDate] = useState("");
   const [newMatchTime, setNewMatchTime] = useState("");
   const [newMatchStage, setNewMatchStage] = useState("Group Stage"); 
+
+  const [ourAimContent, setOurAimContent] = useState("");
 
   const API_URL = "http://127.0.0.1:8000"; 
 
@@ -89,6 +91,24 @@ const Dashboard = () => {
       } catch(e) {}
   };
 
+  // --- NEW: FETCH APP CONTENT ---
+  const fetchAppContent = async () => {
+      try {
+          const res = await fetch(`${API_URL}/club-info/OUR_AIM`);
+          const data = await res.json();
+          setOurAimContent(data.content);
+      } catch(e) {}
+  };
+
+  const handleUpdateContent = async () => {
+      await fetch(`${API_URL}/admin/update-club-info`, { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify({ section: "OUR_AIM", content: ourAimContent }) 
+      });
+      alert("Content Updated!");
+  };
+
   const handleViewHistory = async (player) => {
       setViewingPlayer(player);
       setIsHistoryOpen(true);
@@ -114,6 +134,7 @@ const Dashboard = () => {
       if(isAuthenticated) { 
           if (activeTab === "PLAYERS") fetchPlayers(); 
           else if (activeTab === "ACCOUNTS") fetchTransactions();
+          else if (activeTab === "CONTENT") fetchAppContent(); // NEW
           else if (activeTab === "MANAGE" && selectedTournament) { fetchMatches(); fetchTournamentPlayers(); fetchLeaderboard(); } else { fetchMatches(); } 
       } 
   }, [selectedTournament, isAuthenticated, activeTab, viewMode, activeLevelTab]); 
@@ -132,7 +153,6 @@ const Dashboard = () => {
   const handleModalSubmit = async () => { 
       if(!eventName) return alert("Enter Name"); 
       const endpoint = editingId ? '/admin/edit-tournament' : '/admin/create-tournament'; 
-      // ADDED 'about' to body
       const body = { id: editingId, name: eventName, city: eventCity, sport: eventSport, format: eventFormat, type: eventType, status: eventStatus, settings: categories, venue: eventVenue, about: eventAbout, schedule: eventSchedule, draw_size: parseInt(drawSize) }; 
       await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); setIsModalOpen(false); fetchTournaments(); 
   };
@@ -174,7 +194,6 @@ const Dashboard = () => {
       fetchMatches(); setNewMatchT1(""); setNewMatchT2("");
   };
   
-  // FIX: Handle updates safely by passing full match object
   const handleMatchUpdate = async (match) => { 
       const t1Input = document.getElementById(`t1-${match.id}`);
       const t2Input = document.getElementById(`t2-${match.id}`);
@@ -182,7 +201,6 @@ const Dashboard = () => {
       const timeInput = document.getElementById(`time-${match.id}`);
       const scoreInput = document.getElementById(`score-${match.id}`);
 
-      // Fallback to existing values if input not found in DOM
       const t1 = t1Input ? t1Input.value : match.t1;
       const t2 = t2Input ? t2Input.value : match.t2;
       const date = dateInput ? dateInput.value : match.date;
@@ -280,6 +298,10 @@ const Dashboard = () => {
             <button onClick={() => {setActiveTab("TOURNAMENTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "TOURNAMENTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Events</button>
             <button onClick={() => {setActiveTab("PLAYERS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "PLAYERS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Players & Wallet</button>
             <button onClick={() => {setActiveTab("ACCOUNTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "ACCOUNTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Accounts</button>
+            
+            {/* NEW TAB: CONTENT */}
+            <button onClick={() => {setActiveTab("CONTENT"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "CONTENT" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Content (CMS)</button>
+
             <div className="px-4 py-2 text-xs font-bold text-gray-400 uppercase mt-4">Active Events</div>
             {tournaments.map(t => ( <button key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className={`w-full text-left px-4 py-2 rounded-lg font-medium text-sm ${selectedTournament?.id === t.id ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{t.name}</button> ))}
             <button onClick={openCreateModal} className="w-full mt-4 border border-dashed border-gray-300 p-2 rounded-lg text-xs font-bold text-gray-400 hover:text-blue-600 hover:border-blue-600">+ Create New Event</button>
@@ -344,6 +366,24 @@ const Dashboard = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+        )}
+
+        {/* --- NEW CONTENT TAB --- */}
+        {activeTab === "CONTENT" && (
+            <div>
+                <h2 className="text-3xl font-black text-gray-800 mb-6">App Content (CMS)</h2>
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 max-w-4xl">
+                    <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Edit size={20}/> Edit "Our Mission"</h3>
+                    <p className="text-sm text-gray-400 mb-4">This text will appear on the Login screen and User Profile.</p>
+                    <textarea 
+                        value={ourAimContent} 
+                        onChange={(e) => setOurAimContent(e.target.value)}
+                        className="w-full h-64 p-4 border border-gray-200 rounded-xl font-medium text-gray-700 text-sm leading-relaxed mb-6 focus:border-blue-500 outline-none"
+                        placeholder="Write your mission statement here..."
+                    />
+                    <button onClick={handleUpdateContent} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-wide hover:bg-gray-800">Save Content</button>
+                </div>
             </div>
         )}
 
