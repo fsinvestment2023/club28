@@ -146,7 +146,7 @@ def update_club_info(data: ClubInfoUpdate, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "updated"}
 
-# --- UPDATED NOTIFICATION FEED LOGIC (With Filtering) ---
+# --- UPDATED NOTIFICATION FEED LOGIC (CLEANED PERSONAL TAB) ---
 @app.get("/user/{team_id}/notifications")
 def get_user_notifications(team_id: str, tournament: str = None, city: str = None, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
@@ -155,40 +155,31 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
     final_feed = []
 
     # --- 1. PERSONAL TAB ---
-    # Rule: Wallet (Filtered), Upcoming Matches (Filtered). Max 10.
+    # Rule: Welcome Msg (from Fee Payment) + Upcoming Matches.
+    # REMOVED: Top-up, Withdrawal, Prize Money.
     personal_items = []
     
-    # A. Transactions (Exclude PRIZE)
+    # A. "Welcome" Notifications (Derived from EVENT_FEE transactions)
+    # We use the transaction history to know WHEN they joined, but change the text.
     txns_query = db.query(models.Transaction).filter(
         models.Transaction.user_id == user.id,
-        models.Transaction.mode != "PRIZE"
-    ).order_by(models.Transaction.date.desc()).limit(20).all()
+        models.Transaction.mode == "EVENT_FEE" # Only look for Fees
+    ).order_by(models.Transaction.date.desc()).limit(10).all()
 
     for t in txns_query:
-        # Filter Logic: If viewing specific tournament, hide unrelated fees.
-        # Keep generic top-ups/withdrawals.
-        if tournament and t.mode == "EVENT_FEE":
-            if tournament not in t.description: continue
+        # Extract Tournament Name (e.g. "Fee: PADEL" -> "PADEL")
+        tourney_name = t.description.replace("Fee: ", "").strip()
         
-        title = "Wallet Update"
-        msg = f"Update of ₹{t.amount}"
-        if t.mode == "WALLET_TOPUP": 
-            title = "Money Added"
-            msg = f"Your wallet was topped up by ₹{t.amount}"
-        elif t.mode == "EVENT_FEE": 
-            title = "Event Joined"
-            msg = f"Paid ₹{t.amount} for {t.description.replace('Fee: ', '')}"
-        elif t.mode == "WITHDRAWAL":
-            title = "Withdrawal"
-            msg = f"Withdrawal request of ₹{t.amount}"
-
+        # Filter Logic: If viewing specific tournament, hide others
+        if tournament and (tournament not in tourney_name): continue
+        
         personal_items.append({
-            "id": f"txn_{t.id}",
+            "id": f"welcome_{t.id}",
             "tab": "PERSONAL",
-            "title": title,
-            "message": msg,
-            "sub_text": t.date.strftime("%d %b, %I:%M %p"),
-            "time": t.date.strftime("%I:%M %p"),
+            "title": "Registration Successful",
+            "message": f"Welcome to the {tourney_name} League!",
+            "sub_text": t.date.strftime("%d %b"), # Date
+            "time": t.date.strftime("%I:%M %p"), # Time
             "sort_key": t.date.timestamp()
         })
 
@@ -212,10 +203,10 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
             "message": f"Vs {opponent}",
             "sub_text": f"Scheduled: {m.date} @ {m.time}",
             "time": m.time,
-            "sort_key": 9999999999 # Prioritize matches
+            "sort_key": 9999999999 # Prioritize matches (Keep them at top)
         })
     
-    # Sort and Limit to 10
+    # Sort by Newest and Limit to 10
     personal_items.sort(key=lambda x: x['sort_key'], reverse=True)
     final_feed.extend(personal_items[:10])
 
