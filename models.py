@@ -15,7 +15,8 @@ class User(Base):
     email = Column(String, default="")
     gender = Column(String, default="")
     dob = Column(String, default="")
-    play_location = Column(String, default="") 
+    play_location = Column(String, default="")
+    bank_details = Column(String, default="") # <--- NEW: SAVED BANK INFO
     registration_date = Column(DateTime(timezone=True), server_default=func.now()) 
     
     registrations = relationship("Registration", back_populates="user", foreign_keys="Registration.user_id")
@@ -29,6 +30,8 @@ class Transaction(Base):
     type = Column(String) # "CREDIT" or "DEBIT"
     mode = Column(String) # "WALLET_TOPUP", "EVENT_FEE", "DIRECT_PAYMENT", "PRIZE", "WITHDRAWAL"
     description = Column(String)
+    bank_details = Column(String, default="") 
+    status = Column(String, default="COMPLETED") # <--- NEW: PENDING / COMPLETED
     date = Column(DateTime(timezone=True), server_default=func.now())
     
     user = relationship("User", back_populates="transactions")
@@ -85,15 +88,14 @@ class Match(Base):
 class ClubInfo(Base):
     __tablename__ = "club_info"
     id = Column(Integer, primary_key=True, index=True)
-    section_name = Column(String, unique=True) # e.g. "OUR_AIM"
+    section_name = Column(String, unique=True)
     content = Column(String)
 
-# --- NEW: NOTIFICATION TABLE ---
 class Notification(Base):
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True) # Null for Global (Community/Event)
-    type = Column(String) # PERSONAL, EVENT, COMMUNITY
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    type = Column(String)
     title = Column(String)
     message = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

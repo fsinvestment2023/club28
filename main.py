@@ -8,7 +8,7 @@ import json
 import random
 import re
 from sqlalchemy import desc
-import razorpay  # NEW IMPORT
+import razorpay
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,10 +22,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- RAZORPAY CONFIGURATION (PASTE YOUR KEYS HERE) ---
 RAZORPAY_KEY_ID = "rzp_test_S2LE18azXpy1S8"
 RAZORPAY_KEY_SECRET = "X49kd6GkawnQWTU23KKNVhnz"
-
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 def get_db():
@@ -39,19 +37,6 @@ def safe_int(val):
         return int(val)
     except: return 0
 
-# --- GROUP LOGIC ---
-def get_next_group(db: Session, tournament_name: str, city: str, category: str, draw_size: int):
-    total_count = db.query(models.Registration).filter(
-        models.Registration.tournament_name == tournament_name,
-        models.Registration.city == city,
-        models.Registration.category == category,
-        models.Registration.status == "Confirmed"
-    ).count()
-    allowed_groups = ['A', 'B', 'C', 'D'][:(draw_size // 4)]
-    if not allowed_groups: allowed_groups = ['A']
-    return allowed_groups[total_count % len(allowed_groups)], "OK"
-
-# --- HELPER FOR WINNER CALC ---
 def calculate_winner(score_str, t1, t2):
     if not score_str: return None
     try:
@@ -74,14 +59,23 @@ def get_winner_text(score, t1, t2):
     loser = t2 if winner == t1 else t1
     return f"{winner} beats {loser}"
 
+def get_next_group(db: Session, tournament_name: str, city: str, category: str, draw_size: int):
+    total_count = db.query(models.Registration).filter(
+        models.Registration.tournament_name == tournament_name,
+        models.Registration.city == city,
+        models.Registration.category == category,
+        models.Registration.status == "Confirmed"
+    ).count()
+    allowed_groups = ['A', 'B', 'C', 'D'][:(draw_size // 4)]
+    if not allowed_groups: allowed_groups = ['A']
+    return allowed_groups[total_count % len(allowed_groups)], "OK"
+
 # --- SCHEMAS ---
 class OTPRequest(BaseModel): phone: str
 class RegisterRequest(BaseModel): phone: str; name: str; password: str
 class LoginRequest(BaseModel): team_id: str; password: str
 class WalletUpdate(BaseModel): team_id: str; amount: int
-class JoinRequest(BaseModel): 
-    phone: str; tournament_name: str; city: str; sport: str; level: str; 
-    partner_team_id: str = ""; payment_mode: str = "WALLET"; payment_scope: str = "INDIVIDUAL"
+class JoinRequest(BaseModel): phone: str; tournament_name: str; city: str; sport: str; level: str; partner_team_id: str = ""; payment_mode: str = "WALLET"; payment_scope: str = "INDIVIDUAL"
 class TournamentCreate(BaseModel): name: str; city: str; sport: str; format: str; type: str; status: str = "Open"; settings: list; draw_size: int = 16; venue: str = ""; about: str = ""; schedule: list = []
 class TournamentUpdate(BaseModel): id: int; name: str; city: str; sport: str; format: str; status: str; settings: list; draw_size: int; venue: str; about: str; schedule: list
 class TournamentDelete(BaseModel): id: int
@@ -93,38 +87,21 @@ class ScoreVerify(BaseModel): match_id: int; action: str
 class AdminAddPlayer(BaseModel): name: str; phone: str; category: str; city: str; level: str
 class UserProfileUpdate(BaseModel): team_id: str; email: str; gender: str; dob: str; play_location: str
 class ConfirmPartnerRequest(BaseModel): reg_id: int; payment_mode: str
-class WithdrawRequest(BaseModel): team_id: str; amount: int
+class WithdrawRequest(BaseModel): team_id: str; amount: int; bank_details: str 
+class ConfirmWithdrawal(BaseModel): transaction_id: int # <--- NEW SCHEMA
 class PasswordResetRequest(BaseModel): phone: str; new_password: str
 class ClubInfoUpdate(BaseModel): section: str; content: str
 class SystemNotifCreate(BaseModel): type: str; title: str; message: str
-
-# NEW: Razorpay Schemas
-class RazorpayOrder(BaseModel):
-    amount: int  # Amount in Rupees
-
-class RazorpayVerify(BaseModel):
-    razorpay_payment_id: str
-    razorpay_order_id: str
-    razorpay_signature: str
-    team_id: str
-    amount: int # Amount in Rupees
+class RazorpayOrder(BaseModel): amount: int
+class RazorpayVerify(BaseModel): razorpay_payment_id: str; razorpay_order_id: str; razorpay_signature: str; team_id: str; amount: int
 
 # --- ENDPOINTS ---
 
-# --- NEW: RAZORPAY ENDPOINTS ---
 @app.post("/razorpay/create-order")
 def create_razorpay_order(data: RazorpayOrder):
     try:
-        # Razorpay takes amount in PAISE (1 Rupee = 100 Paise)
         amount_in_paise = data.amount * 100
-        
-        order_data = {
-            "amount": amount_in_paise,
-            "currency": "INR",
-            "receipt": f"receipt_{random.randint(1000, 9999)}",
-            "payment_capture": 1 # Auto capture
-        }
-        
+        order_data = { "amount": amount_in_paise, "currency": "INR", "receipt": f"receipt_{random.randint(1000, 9999)}", "payment_capture": 1 }
         order = razorpay_client.order.create(data=order_data)
         return {"status": "created", "order_id": order["id"], "key_id": RAZORPAY_KEY_ID}
     except Exception as e:
@@ -133,37 +110,83 @@ def create_razorpay_order(data: RazorpayOrder):
 
 @app.post("/razorpay/verify-payment")
 def verify_razorpay_payment(data: RazorpayVerify, db: Session = Depends(get_db)):
-    # 1. Verify Signature
     try:
-        params_dict = {
-            'razorpay_order_id': data.razorpay_order_id,
-            'razorpay_payment_id': data.razorpay_payment_id,
-            'razorpay_signature': data.razorpay_signature
-        }
+        params_dict = { 'razorpay_order_id': data.razorpay_order_id, 'razorpay_payment_id': data.razorpay_payment_id, 'razorpay_signature': data.razorpay_signature }
         razorpay_client.utility.verify_payment_signature(params_dict)
     except:
         raise HTTPException(status_code=400, detail="Invalid Payment Signature")
-
-    # 2. If signature matches, Credit the User's Wallet
     user = db.query(models.User).filter(models.User.team_id == data.team_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
+    if not user: raise HTTPException(status_code=404, detail="User not found")
     user.wallet_balance += data.amount
+    db.add(models.Transaction(user_id=user.id, amount=data.amount, type="CREDIT", mode="WALLET_TOPUP", description=f"Razorpay Add: {data.razorpay_payment_id}"))
+    db.commit()
+    return {"status": "success", "new_balance": user.wallet_balance}
+
+@app.post("/user/withdraw")
+def withdraw_money(data: WithdrawRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.team_id == data.team_id).first()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    if user.wallet_balance < data.amount: raise HTTPException(status_code=400, detail="Insufficient Balance")
     
-    # Log Transaction
+    # Update User's Persistent Bank Details
+    user.bank_details = data.bank_details 
+    user.wallet_balance -= data.amount
+    
+    # Create Transaction with PENDING status
     db.add(models.Transaction(
         user_id=user.id, 
         amount=data.amount, 
-        type="CREDIT", 
-        mode="WALLET_TOPUP", 
-        description=f"Razorpay Add: {data.razorpay_payment_id}"
+        type="DEBIT", 
+        mode="WITHDRAWAL", 
+        description="User Withdrawal Request", 
+        bank_details=data.bank_details,
+        status="PENDING" # <--- SET STATUS TO PENDING
     ))
     db.commit()
-    
     return {"status": "success", "new_balance": user.wallet_balance}
-# -------------------------------
 
+# --- NEW ENDPOINT: ADMIN CONFIRM WITHDRAWAL ---
+@app.post("/admin/confirm-withdrawal")
+def confirm_withdrawal(data: ConfirmWithdrawal, db: Session = Depends(get_db)):
+    txn = db.query(models.Transaction).filter(models.Transaction.id == data.transaction_id).first()
+    if not txn: raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    txn.status = "COMPLETED"
+    db.commit()
+    return {"status": "success"}
+
+@app.get("/admin/transactions")
+def get_all_transactions(db: Session = Depends(get_db)):
+    results = db.query(models.Transaction, models.User).join(models.User, models.Transaction.user_id == models.User.id).order_by(models.Transaction.date.desc()).all()
+    txns = []
+    for txn, user in results:
+        txns.append({
+            "id": txn.id, "date": txn.date, "amount": txn.amount, "type": txn.type, "mode": txn.mode, "description": txn.description, 
+            "bank_details": txn.bank_details, 
+            "status": txn.status, # <--- SEND STATUS TO FRONTEND
+            "user_name": user.name, "user_phone": user.phone, "team_id": user.team_id
+        })
+    return txns
+
+@app.get("/user/{team_id}")
+def get_user_details(team_id: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.team_id == team_id).first()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
+    reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
+    return { 
+        "id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, 
+        "wallet_balance": user.wallet_balance, "email": user.email, "gender": user.gender, "dob": user.dob, 
+        "play_location": user.play_location, "bank_details": user.bank_details, # <--- SEND SAVED BANK DETAILS
+        "registrations": reg_data 
+    }
+
+@app.get("/admin/players")
+def get_all_players(db: Session = Depends(get_db)): 
+    # Return all fields including bank_details
+    return db.query(models.User).all()
+
+# ... [KEEP ALL OTHER ENDPOINTS THE SAME: send-otp, register, login, etc.] ...
 @app.post("/send-otp")
 def send_otp(data: OTPRequest): return {"status": "sent", "otp": "1234"}
 
@@ -217,139 +240,48 @@ def update_club_info(data: ClubInfoUpdate, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "updated"}
 
-# --- UPDATED NOTIFICATION FEED LOGIC (CLEANED PERSONAL TAB) ---
 @app.get("/user/{team_id}/notifications")
 def get_user_notifications(team_id: str, tournament: str = None, city: str = None, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: return []
-
     final_feed = []
-
-    # --- 1. PERSONAL TAB ---
-    personal_items = []
     
-    # A. "Welcome" Notifications (Derived from EVENT_FEE transactions)
-    txns_query = db.query(models.Transaction).filter(
-        models.Transaction.user_id == user.id,
-        models.Transaction.mode == "EVENT_FEE" 
-    ).order_by(models.Transaction.date.desc()).limit(10).all()
-
+    # PERSONAL
+    txns_query = db.query(models.Transaction).filter(models.Transaction.user_id == user.id, models.Transaction.mode == "EVENT_FEE").order_by(models.Transaction.date.desc()).limit(10).all()
     for t in txns_query:
         tourney_name = t.description.replace("Fee: ", "").strip()
         if tournament and (tournament not in tourney_name): continue
-        
-        personal_items.append({
-            "id": f"welcome_{t.id}",
-            "tab": "PERSONAL",
-            "title": "Registration Successful",
-            "message": f"Welcome to the {tourney_name} League!",
-            "sub_text": t.date.strftime("%d %b"), 
-            "time": t.date.strftime("%I:%M %p"), 
-            "sort_key": t.date.timestamp()
-        })
+        final_feed.append({ "id": f"welcome_{t.id}", "tab": "PERSONAL", "title": "Registration Successful", "message": f"Welcome to {tourney_name}!", "sub_text": t.date.strftime("%d %b"), "time": t.date.strftime("%I:%M %p"), "sort_key": t.date.timestamp() })
 
-    # B. Upcoming Matches
-    match_query = db.query(models.Match).filter(
-        (models.Match.t1.contains(team_id) | models.Match.t2.contains(team_id)),
-        models.Match.status == "Scheduled"
-    )
-    if tournament and city:
-        match_query = match_query.filter(models.Match.category == tournament, models.Match.city == city)
-    
+    match_query = db.query(models.Match).filter((models.Match.t1.contains(team_id) | models.Match.t2.contains(team_id)), models.Match.status == "Scheduled")
+    if tournament and city: match_query = match_query.filter(models.Match.category == tournament, models.Match.city == city)
     matches = match_query.all()
-    
     for m in matches:
         opponent = m.t2 if team_id in m.t1 else m.t1
-        personal_items.append({
-            "id": f"match_{m.id}",
-            "tab": "PERSONAL",
-            "title": "Upcoming Match",
-            "message": f"Vs {opponent}",
-            "sub_text": f"Scheduled: {m.date} @ {m.time}",
-            "time": m.time,
-            "sort_key": 9999999999 
-        })
+        final_feed.append({ "id": f"match_{m.id}", "tab": "PERSONAL", "title": "Upcoming Match", "message": f"Vs {opponent}", "sub_text": f"Scheduled: {m.date} @ {m.time}", "time": m.time, "sort_key": 9999999999 })
     
-    personal_items.sort(key=lambda x: x['sort_key'], reverse=True)
-    final_feed.extend(personal_items[:10])
-
-
-    # --- 2. EVENT TAB ---
-    event_items = []
-    
+    # EVENT
     event_match_query = db.query(models.Match).filter(models.Match.status == "Official")
-    if tournament and city:
-        event_match_query = event_match_query.filter(models.Match.category == tournament, models.Match.city == city)
-        
+    if tournament and city: event_match_query = event_match_query.filter(models.Match.category == tournament, models.Match.city == city)
     finished_matches = event_match_query.order_by(models.Match.id.desc()).limit(10).all()
-
     for m in finished_matches:
-        result_text = get_winner_text(m.score, m.t1, m.t2)
-        event_items.append({
-            "id": f"res_{m.id}",
-            "tab": "EVENT",
-            "title": "Match Result",
-            "message": result_text,
-            "sub_text": f"{m.category} ({m.city}) • Score: {m.score}",
-            "time": "",
-            "sort_key": m.id
-        })
-    
-    final_feed.extend(event_items)
+        final_feed.append({ "id": f"res_{m.id}", "tab": "EVENT", "title": "Match Result", "message": get_winner_text(m.score, m.t1, m.t2), "sub_text": f"{m.category} ({m.city}) • Score: {m.score}", "time": "", "sort_key": m.id })
 
-
-    # --- 3. COMMUNITY TAB ---
-    community_items = []
-
+    # COMMUNITY
     new_tourneys = db.query(models.Tournament).order_by(models.Tournament.id.desc()).limit(5).all()
     for t in new_tourneys:
-        community_items.append({
-            "id": f"tour_{t.id}",
-            "tab": "COMMUNITY",
-            "title": "New Event Added",
-            "message": f"{t.name} is now open!",
-            "sub_text": f"{t.city} • {t.sport}",
-            "time": "",
-            "sort_key": t.id * 1000
-        })
-
-    manual_notifs = db.query(models.Notification).filter(
-        models.Notification.type == "COMMUNITY"
-    ).order_by(models.Notification.created_at.desc()).limit(5).all()
-
+        final_feed.append({ "id": f"tour_{t.id}", "tab": "COMMUNITY", "title": "New Event Added", "message": f"{t.name} is now open!", "sub_text": f"{t.city} • {t.sport}", "time": "", "sort_key": t.id * 1000 })
+    manual_notifs = db.query(models.Notification).filter(models.Notification.type == "COMMUNITY").order_by(models.Notification.created_at.desc()).limit(5).all()
     for n in manual_notifs:
-        community_items.append({
-            "id": f"notif_{n.id}",
-            "tab": "COMMUNITY",
-            "title": n.title,
-            "message": n.message,
-            "sub_text": n.created_at.strftime("%d %b"),
-            "time": "",
-            "sort_key": n.created_at.timestamp()
-        })
+        final_feed.append({ "id": f"notif_{n.id}", "tab": "COMMUNITY", "title": n.title, "message": n.message, "sub_text": n.created_at.strftime("%d %b"), "time": "", "sort_key": n.created_at.timestamp() })
 
-    community_items.sort(key=lambda x: x['sort_key'], reverse=True)
-    final_feed.extend(community_items[:10])
-
-    return final_feed
+    return sorted(final_feed, key=lambda x: x['sort_key'], reverse=True)
 
 @app.post("/admin/create-notification")
 def create_notification(data: SystemNotifCreate, db: Session = Depends(get_db)):
     db.add(models.Notification(type=data.type, title=data.title, message=data.message))
     db.commit()
     return {"status": "created"}
-
-@app.get("/user/{team_id}")
-def get_user_details(team_id: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.team_id == team_id).first()
-    if not user: raise HTTPException(status_code=404, detail="User not found")
-    regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
-    reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
-    return {
-        "id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, 
-        "wallet_balance": user.wallet_balance, "email": user.email, "gender": user.gender, "dob": user.dob, "play_location": user.play_location,
-        "registrations": reg_data
-    }
 
 @app.get("/user/{team_id}/pending")
 def get_pending_requests(team_id: str, db: Session = Depends(get_db)):
@@ -383,10 +315,6 @@ def get_user_history(team_id: str, db: Session = Depends(get_db)):
     matches = db.query(models.Match).filter(models.Match.t1.contains(user.name) | models.Match.t2.contains(user.name)).all()
     return matches
 
-@app.get("/admin/players")
-def get_all_players(db: Session = Depends(get_db)): 
-    return db.query(models.User).all()
-
 @app.get("/admin/tournament-players")
 def get_tournament_players(name: str, city: str, db: Session = Depends(get_db)):
     results = db.query(models.Registration).filter(models.Registration.tournament_name == name, models.Registration.city == city, models.Registration.status == "Confirmed").all()
@@ -416,16 +344,6 @@ def add_wallet_money(data: WalletUpdate, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "ok", "new_balance": user.wallet_balance}
 
-@app.post("/user/withdraw")
-def withdraw_money(data: WithdrawRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.team_id == data.team_id).first()
-    if not user: raise HTTPException(status_code=404, detail="User not found")
-    if user.wallet_balance < data.amount: raise HTTPException(status_code=400, detail="Insufficient Balance")
-    user.wallet_balance -= data.amount
-    db.add(models.Transaction(user_id=user.id, amount=data.amount, type="DEBIT", mode="WITHDRAWAL", description="User Withdrawal"))
-    db.commit()
-    return {"status": "success", "new_balance": user.wallet_balance}
-
 @app.post("/admin/manual-register")
 def admin_manual_register(data: AdminAddPlayer, db: Session = Depends(get_db)):
     tourney = db.query(models.Tournament).filter(models.Tournament.name == data.category, models.Tournament.city == data.city).first()
@@ -436,7 +354,6 @@ def admin_manual_register(data: AdminAddPlayer, db: Session = Depends(get_db)):
          team_id = f"{data.name[:2].upper()}{data.phone[-2:]}"
          user = models.User(phone=data.phone, name=data.name, password="password", team_id=team_id, wallet_balance=0)
          db.add(user); db.commit(); db.refresh(user)
-    
     new_reg = models.Registration(user_id=user.id, tournament_name=data.category, city=data.city, sport=tourney.sport, category=data.level, group_id=group, status="Confirmed")
     db.add(new_reg); db.commit()
     return {"message": "User Registered", "group": group}
@@ -573,26 +490,14 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
 def get_user_transactions(team_id: str, tournament: str = None, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: return []
-    
     query = db.query(models.Transaction).filter(models.Transaction.user_id == user.id).order_by(models.Transaction.date.desc())
     all_txns = query.all()
-    
     if tournament:
         filtered_txns = []
         for t in all_txns:
-            if tournament in t.description:
-                filtered_txns.append(t)
+            if tournament in t.description: filtered_txns.append(t)
         return filtered_txns
-        
     return all_txns
-
-@app.get("/admin/transactions")
-def get_all_transactions(db: Session = Depends(get_db)):
-    results = db.query(models.Transaction, models.User).join(models.User, models.Transaction.user_id == models.User.id).order_by(models.Transaction.date.desc()).all()
-    txns = []
-    for txn, user in results:
-        txns.append({"id": txn.id, "date": txn.date, "amount": txn.amount, "type": txn.type, "mode": txn.mode, "description": txn.description, "user_name": user.name, "user_phone": user.phone, "team_id": user.team_id})
-    return txns
 
 @app.get("/admin/leaderboard")
 def admin_leaderboard(tournament: str, city: str, level: str, db: Session = Depends(get_db)): return get_standings(tournament, city, level, db)
@@ -633,16 +538,11 @@ def admin_create_match(m: MatchCreate, db: Session = Depends(get_db)):
 def admin_edit_match_full(data: MatchFullUpdate, db: Session = Depends(get_db)):
     m = db.query(models.Match).filter(models.Match.id == data.id).first()
     if m: 
-        m.t1 = data.t1
-        m.t2 = data.t2
-        m.date = data.date
-        m.time = data.time
-        m.score = data.score
+        m.t1 = data.t1; m.t2 = data.t2; m.date = data.date; m.time = data.time; m.score = data.score
         if data.score:
             m.status = "Official"
             winner = calculate_winner(m.score, m.t1, m.t2)
-            if winner: 
-                distribute_prize(m, winner, db)
+            if winner: distribute_prize(m, winner, db)
         db.commit()
     return {"msg": "ok"}
 
@@ -660,34 +560,22 @@ def credit_user(db, user_id, amount, desc):
     if user:
         user.wallet_balance += amount
         db.add(models.Transaction(user_id=user.id, amount=amount, type="CREDIT", mode="PRIZE", description=desc))
-        print(f"PAID {user.name}: {amount} for {desc}")
 
 def distribute_prize(match, winner_name, db):
     tourney = db.query(models.Tournament).filter(models.Tournament.name == match.category, models.Tournament.city == match.city).first()
     if not tourney: return
     categories = json.loads(tourney.settings)
-    
     winner_ids = re.findall(r'\((.*?)\)', winner_name)
     if not winner_ids: return
-
     first_winner = db.query(models.User).filter(models.User.team_id == winner_ids[0]).first()
     if not first_winner: return
-    
-    reg = db.query(models.Registration).filter(
-        models.Registration.user_id == first_winner.id, 
-        models.Registration.tournament_name == match.category, 
-        models.Registration.city == match.city
-    ).first()
-    
+    reg = db.query(models.Registration).filter(models.Registration.user_id == first_winner.id, models.Registration.tournament_name == match.category, models.Registration.city == match.city).first()
     if not reg: return
     match_level = reg.category 
     settings = next((c for c in categories if c['name'] == match_level), None)
     if not settings: return
-
     per_match_amt = safe_int(settings.get('per_match', 0))
-    # --- UPDATED: Include Tournament Name in Description for filtering ---
     match_desc = f"Match Win: {match.category} (Match #{match.id})"
-    
     if per_match_amt > 0:
         amount = per_match_amt // len(winner_ids)
         for tid in winner_ids:
@@ -702,7 +590,6 @@ def distribute_prize(match, winner_name, db):
             for tid in winner_ids:
                 u = db.query(models.User).filter(models.User.team_id == tid).first()
                 if u: credit_user(db, u.id, amount, p1_desc)
-
         loser_name = match.t2 if winner_name == match.t1 else match.t1
         loser_ids = re.findall(r'\((.*?)\)', loser_name)
         p2_amt = safe_int(settings.get('p2', 0))
@@ -712,7 +599,6 @@ def distribute_prize(match, winner_name, db):
             for tid in loser_ids:
                 u = db.query(models.User).filter(models.User.team_id == tid).first()
                 if u: credit_user(db, u.id, amount, p2_desc)
-
     elif match.stage == "3rd Place":
         p3_amt = safe_int(settings.get('p3', 0))
         p3_desc = f"3rd Place Prize: {match.category}"

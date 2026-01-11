@@ -16,6 +16,100 @@ const loadRazorpayScript = () => {
     });
 };
 
+// --- WITHDRAWAL MODAL (SMART) ---
+const WithdrawModal = ({ isOpen, onClose, teamId, maxAmount, savedDetails, onSuccess }) => {
+    if (!isOpen) return null;
+    
+    // Parse saved details if they exist "Bank: HDFC | Acc: 123..."
+    const parseDetails = (str) => {
+        if (!str) return { bankName: "", accNo: "", ifsc: "" };
+        const parts = str.split(" | ");
+        return {
+            bankName: parts[0]?.replace("Bank: ", "") || "",
+            accNo: parts[1]?.replace("Acc: ", "") || "",
+            ifsc: parts[2]?.replace("IFSC: ", "") || ""
+        };
+    };
+
+    const initial = parseDetails(savedDetails);
+    const [amount, setAmount] = useState("");
+    const [isEditing, setIsEditing] = useState(!savedDetails); // Edit mode if no details saved
+    const [form, setForm] = useState(initial);
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async () => {
+        if (!amount) return alert("Enter Amount");
+        if (parseInt(amount) > maxAmount) return alert("Insufficient balance");
+        if (parseInt(amount) < 100) return alert("Minimum withdrawal is ₹100");
+        if (!form.bankName || !form.accNo || !form.ifsc) return alert("Fill Bank Details");
+
+        setLoading(true);
+        const detailsString = `Bank: ${form.bankName} | Acc: ${form.accNo} | IFSC: ${form.ifsc}`;
+        
+        try {
+            const res = await fetch(`${API_URL}/user/withdraw`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    team_id: teamId, 
+                    amount: parseInt(amount),
+                    bank_details: detailsString 
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert("Request Sent! Admin will process payment.");
+                onSuccess();
+                onClose();
+            } else {
+                alert(data.detail);
+            }
+        } catch (e) { alert("Server Error"); }
+        setLoading(false);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-black italic uppercase text-gray-800">Withdraw Funds</h3>
+                    <button onClick={onClose} className="bg-gray-100 p-2 rounded-full hover:bg-gray-200"><X size={16}/></button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Amount (₹)</label>
+                        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`Max: ₹${maxAmount}`} className="w-full p-3 bg-gray-50 rounded-xl font-black text-2xl border border-gray-200 outline-none focus:border-blue-500 text-center" />
+                    </div>
+
+                    {!isEditing ? (
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-bold text-blue-900 text-xs uppercase">Receiving Account</h4>
+                                <button onClick={() => setIsEditing(true)} className="text-[10px] font-bold text-blue-600 underline">Change</button>
+                            </div>
+                            <p className="font-bold text-sm text-gray-800">{form.bankName}</p>
+                            <p className="text-xs font-mono text-gray-500">A/C: {form.accNo}</p>
+                            <p className="text-xs font-mono text-gray-500">IFSC: {form.ifsc}</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                            <h4 className="font-bold text-gray-400 text-xs uppercase mb-2">Bank Details</h4>
+                            <input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} placeholder="Bank Name" className="w-full p-2 bg-white rounded-lg font-bold text-xs border border-gray-200" />
+                            <input value={form.accNo} onChange={e => setForm({...form, accNo: e.target.value})} placeholder="Account Number" className="w-full p-2 bg-white rounded-lg font-bold text-xs border border-gray-200" />
+                            <input value={form.ifsc} onChange={e => setForm({...form, ifsc: e.target.value.toUpperCase()})} placeholder="IFSC Code" className="w-full p-2 bg-white rounded-lg font-bold text-xs border border-gray-200 uppercase" />
+                        </div>
+                    )}
+
+                    <button onClick={handleSubmit} disabled={loading} className="w-full bg-black text-white p-4 rounded-xl font-black uppercase shadow-lg hover:bg-gray-800 transition-all mt-2">
+                        {loading ? "Processing..." : "Confirm Withdrawal"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- NOTIFICATION CENTER (MODAL) ---
 const NotificationCenter = ({ isOpen, onClose, teamId, tournament, city }) => {
     const [activeTab, setActiveTab] = useState("PERSONAL");
@@ -520,6 +614,7 @@ const ProfilePage = ({ user, onLogout }) => {
     const [formData, setFormData] = useState({ email: user?.email || "", gender: user?.gender || "", dob: user?.dob || "", play_location: user?.play_location || "" });
     const [history, setHistory] = useState([]);
     const [transactions, setTransactions] = useState([]);
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
     useEffect(() => {
         if(user?.team_id) {
@@ -567,20 +662,60 @@ const ProfilePage = ({ user, onLogout }) => {
         } catch (err) { console.error(err); alert("Something went wrong"); }
     };
 
-    const handleWithdraw = async () => {
-        const amount = prompt("Enter amount to withdraw:", "500");
-        if(!amount) return;
-        try {
-            const res = await fetch(`${API_URL}/user/withdraw`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: user.team_id, amount: parseInt(amount) }) });
-            const data = await res.json();
-            if(res.ok) { alert(`₹${amount} withdrawal requested!`); window.location.reload(); } else { alert("Withdrawal Failed: " + data.detail); }
-        } catch(e) { alert("Error connecting to server"); }
-    };
-
     const getAmountColor = (t) => { if (t.type === "CREDIT") return "text-green-600"; if (t.mode === "WITHDRAWAL") return "text-red-500"; return "text-pink-500"; };
 
     return (
-        <div className="pb-24 bg-white min-h-screen font-sans"><div className="bg-blue-600 text-white p-8 pt-12 rounded-b-[40px] shadow-lg mb-8"><div className="flex items-center gap-4 mb-6"><div className="w-16 h-16 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-2xl shadow-inner">{user?.name?.charAt(0) || "P"}</div><div><h1 className="text-2xl font-bold">{user?.name || "Player"}</h1><p className="text-xs opacity-80">Team ID: {user?.team_id}</p><p className="text-xs font-bold bg-blue-700 px-2 py-1 rounded inline-block mt-1">₹{user?.wallet_balance}</p></div></div><div className="flex bg-blue-700 p-1 rounded-xl">{['INFO', 'WALLET', 'HISTORY'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === tab ? 'bg-white text-blue-600 shadow' : 'text-blue-200'}`}>{tab}</button>))}</div></div><div className="p-6">{activeTab === "INFO" && (<div className="space-y-4"><h3 className="font-black text-lg text-gray-800 flex items-center gap-2"><User size={20}/> Personal Information</h3><div className="grid gap-3"><div><label className="text-[10px] font-bold text-gray-400 uppercase">Email</label><input disabled={!editMode} value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Gender</label><select disabled={!editMode} value={formData.gender} onChange={e=>setFormData({...formData, gender: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Date of Birth</label><input type="date" disabled={!editMode} value={formData.dob} onChange={e=>setFormData({...formData, dob: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Where do you play?</label><input disabled={!editMode} value={formData.play_location} onChange={e=>setFormData({...formData, play_location: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div></div>{editMode ? (<button onClick={handleSave} className="w-full bg-green-600 text-white p-4 rounded-xl font-black uppercase flex items-center justify-center gap-2 shadow-lg"><Save size={18}/> Save Changes</button>) : (<button onClick={() => setEditMode(true)} className="w-full bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg">Edit Profile</button>)}</div>)}{activeTab === "WALLET" && (<div className="text-center mb-8"><Wallet size={48} className="mx-auto text-blue-200 mb-4"/><h2 className="text-4xl font-black text-gray-800 mb-2">₹{user?.wallet_balance}</h2><p className="text-xs font-bold text-gray-400 uppercase mb-4">Current Balance</p><div className="flex gap-2 mb-4"><button onClick={handleAddMoney} className="flex-1 bg-black text-white p-4 rounded-xl font-black uppercase shadow-lg">Add Money +</button><button onClick={handleWithdraw} className="flex-1 bg-gray-100 text-gray-800 p-4 rounded-xl font-black uppercase shadow-sm border border-gray-200 hover:bg-gray-200">Withdraw -</button></div><h3 className="font-bold text-gray-700 text-xs uppercase mb-3 flex items-center gap-2"><RefreshCw size={14}/> Recent Transactions</h3><div className="space-y-3">{transactions.length > 0 ? (transactions.map(t => (<div key={t.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100"><div><p className="font-bold text-gray-800 text-xs">{t.description}</p><p className="text-[10px] text-gray-400 uppercase">{new Date(t.date).toLocaleDateString()}</p></div><p className={`font-black text-sm ${getAmountColor(t)}`}>{t.type === "CREDIT" ? "+" : "-"}₹{t.amount}</p></div>))) : (<p className="text-center text-gray-400 text-xs">No transactions yet.</p>)}</div></div>)}{activeTab === "HISTORY" && (<div><h3 className="font-black text-lg text-gray-800 flex items-center gap-2 mb-4"><FileText size={20}/> Match History</h3>{history.length > 0 ? (<div className="space-y-2">{history.map(m => (<div key={m.id} className="bg-gray-50 p-4 rounded-xl flex justify-between items-center border border-gray-100"><div><p className="text-[10px] font-bold text-gray-400 uppercase">{m.date}</p><p className="font-black text-sm">{m.t1} vs {m.t2}</p></div><div className="text-right"><p className="font-black text-lg text-blue-600">{m.score || "-"}</p><p className="text-[9px] font-bold text-gray-400 uppercase">{m.status}</p></div></div>))}</div>) : (<p className="text-center text-gray-400 text-xs font-bold mt-10">No matches played yet.</p>)}</div>)}<div className="mt-12 pt-12 border-t border-gray-100"><button onClick={onLogout} className="w-full bg-red-50 text-red-500 p-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-all"><LogOut size={16}/> Log Out</button></div></div></div>
+        <div className="pb-24 bg-white min-h-screen font-sans">
+             {/* INCLUDE THE MODAL WITH SAVED DETAILS */}
+            <WithdrawModal 
+                isOpen={showWithdrawModal} 
+                onClose={() => setShowWithdrawModal(false)}
+                teamId={user?.team_id}
+                maxAmount={user?.wallet_balance || 0}
+                savedDetails={user?.bank_details}
+                onSuccess={() => window.location.reload()}
+            />
+
+            <div className="bg-blue-600 text-white p-8 pt-12 rounded-b-[40px] shadow-lg mb-8"><div className="flex items-center gap-4 mb-6"><div className="w-16 h-16 bg-white text-blue-600 rounded-full flex items-center justify-center font-black text-2xl shadow-inner">{user?.name?.charAt(0) || "P"}</div><div><h1 className="text-2xl font-bold">{user?.name || "Player"}</h1><p className="text-xs opacity-80">Team ID: {user?.team_id}</p><p className="text-xs font-bold bg-blue-700 px-2 py-1 rounded inline-block mt-1">₹{user?.wallet_balance}</p></div></div><div className="flex bg-blue-700 p-1 rounded-xl">{['INFO', 'WALLET', 'HISTORY'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === tab ? 'bg-white text-blue-600 shadow' : 'text-blue-200'}`}>{tab}</button>))}</div></div>
+            
+            <div className="p-6">
+                {activeTab === "INFO" && (<div className="space-y-4"><h3 className="font-black text-lg text-gray-800 flex items-center gap-2"><User size={20}/> Personal Information</h3><div className="grid gap-3"><div><label className="text-[10px] font-bold text-gray-400 uppercase">Email</label><input disabled={!editMode} value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Gender</label><select disabled={!editMode} value={formData.gender} onChange={e=>setFormData({...formData, gender: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Date of Birth</label><input type="date" disabled={!editMode} value={formData.dob} onChange={e=>setFormData({...formData, dob: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div><div><label className="text-[10px] font-bold text-gray-400 uppercase">Where do you play?</label><input disabled={!editMode} value={formData.play_location} onChange={e=>setFormData({...formData, play_location: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl font-bold text-sm border border-gray-100"/></div></div>{editMode ? (<button onClick={handleSave} className="w-full bg-green-600 text-white p-4 rounded-xl font-black uppercase flex items-center justify-center gap-2 shadow-lg"><Save size={18}/> Save Changes</button>) : (<button onClick={() => setEditMode(true)} className="w-full bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg">Edit Profile</button>)}</div>)}
+                
+                {activeTab === "WALLET" && (
+                    <div className="text-center mb-8">
+                        <Wallet size={48} className="mx-auto text-blue-200 mb-4"/>
+                        <h2 className="text-4xl font-black text-gray-800 mb-2">₹{user?.wallet_balance}</h2>
+                        <p className="text-xs font-bold text-gray-400 uppercase mb-4">Current Balance</p>
+                        <div className="flex gap-2 mb-4">
+                            <button onClick={handleAddMoney} className="flex-1 bg-black text-white p-4 rounded-xl font-black uppercase shadow-lg">Add Money +</button>
+                            <button onClick={() => setShowWithdrawModal(true)} className="flex-1 bg-gray-100 text-gray-800 p-4 rounded-xl font-black uppercase shadow-sm border border-gray-200 hover:bg-gray-200">Withdraw -</button>
+                        </div>
+                        <h3 className="font-bold text-gray-700 text-xs uppercase mb-3 flex items-center gap-2"><RefreshCw size={14}/> Recent Transactions</h3>
+                        <div className="space-y-3">
+                            {transactions.length > 0 ? (transactions.map(t => (
+                                <div key={t.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                    <div className="text-left">
+                                        <p className="font-bold text-gray-800 text-xs">{t.description}</p>
+                                        <p className="text-[10px] text-gray-400 uppercase">{new Date(t.date).toLocaleDateString()}</p>
+                                        
+                                        {/* STATUS BADGE FOR WITHDRAWALS */}
+                                        {t.mode === "WITHDRAWAL" && (
+                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase mt-1 inline-block ${t.status === "COMPLETED" ? "bg-green-100 text-green-600" : "bg-yellow-100 text-yellow-600"}`}>
+                                                {t.status === "COMPLETED" ? "DONE" : "PENDING"}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className={`font-black text-sm ${getAmountColor(t)}`}>{t.type === "CREDIT" ? "+" : "-"}₹{t.amount}</p>
+                                </div>
+                            ))) : (<p className="text-center text-gray-400 text-xs">No transactions yet.</p>)}
+                        </div>
+                    </div>
+                )}
+                
+                {activeTab === "HISTORY" && (<div><h3 className="font-black text-lg text-gray-800 flex items-center gap-2 mb-4"><FileText size={20}/> Match History</h3>{history.length > 0 ? (<div className="space-y-2">{history.map(m => (<div key={m.id} className="bg-gray-50 p-4 rounded-xl flex justify-between items-center border border-gray-100"><div><p className="text-[10px] font-bold text-gray-400 uppercase">{m.date}</p><p className="font-black text-sm">{m.t1} vs {m.t2}</p></div><div className="text-right"><p className="font-black text-lg text-blue-600">{m.score || "-"}</p><p className="text-[9px] font-bold text-gray-400 uppercase">{m.status}</p></div></div>))}</div>) : (<p className="text-center text-gray-400 text-xs font-bold mt-10">No matches played yet.</p>)}</div>)}
+                <div className="mt-12 pt-12 border-t border-gray-100"><button onClick={onLogout} className="w-full bg-red-50 text-red-500 p-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-all"><LogOut size={16}/> Log Out</button></div>
+            </div>
+        </div>
     );
 };
 
