@@ -10,27 +10,34 @@ import re
 from sqlalchemy import desc
 import razorpay
 
+# Create Database Tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+# --- CORS MIDDLEWARE (Crucial for Mobile Access) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
+# --- RAZORPAY CONFIGURATION ---
 RAZORPAY_KEY_ID = "rzp_test_S2LE18azXpy1S8"
 RAZORPAY_KEY_SECRET = "X49kd6GkawnQWTU23KKNVhnz"
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
+# --- DEPENDENCY ---
 def get_db():
     db = SessionLocal()
-    try: yield db
-    finally: db.close()
+    try:
+        yield db
+    finally:
+        db.close()
 
+# --- HELPER FUNCTIONS ---
 def safe_int(val):
     try:
         if val is None or val == "": return 0
@@ -88,7 +95,7 @@ class AdminAddPlayer(BaseModel): name: str; phone: str; category: str; city: str
 class UserProfileUpdate(BaseModel): team_id: str; email: str; gender: str; dob: str; play_location: str
 class ConfirmPartnerRequest(BaseModel): reg_id: int; payment_mode: str
 class WithdrawRequest(BaseModel): team_id: str; amount: int; bank_details: str 
-class ConfirmWithdrawal(BaseModel): transaction_id: int # <--- NEW SCHEMA
+class ConfirmWithdrawal(BaseModel): transaction_id: int 
 class PasswordResetRequest(BaseModel): phone: str; new_password: str
 class ClubInfoUpdate(BaseModel): section: str; content: str
 class SystemNotifCreate(BaseModel): type: str; title: str; message: str
@@ -96,6 +103,11 @@ class RazorpayOrder(BaseModel): amount: int
 class RazorpayVerify(BaseModel): razorpay_payment_id: str; razorpay_order_id: str; razorpay_signature: str; team_id: str; amount: int
 
 # --- ENDPOINTS ---
+
+# !!! CRITICAL FIX: ROOT ENDPOINT FOR MOBILE CONNECTION TEST !!!
+@app.get("/")
+def read_root():
+    return {"message": "Club 28 Backend is Online!"}
 
 @app.post("/razorpay/create-order")
 def create_razorpay_order(data: RazorpayOrder):
@@ -140,12 +152,11 @@ def withdraw_money(data: WithdrawRequest, db: Session = Depends(get_db)):
         mode="WITHDRAWAL", 
         description="User Withdrawal Request", 
         bank_details=data.bank_details,
-        status="PENDING" # <--- SET STATUS TO PENDING
+        status="PENDING"
     ))
     db.commit()
     return {"status": "success", "new_balance": user.wallet_balance}
 
-# --- NEW ENDPOINT: ADMIN CONFIRM WITHDRAWAL ---
 @app.post("/admin/confirm-withdrawal")
 def confirm_withdrawal(data: ConfirmWithdrawal, db: Session = Depends(get_db)):
     txn = db.query(models.Transaction).filter(models.Transaction.id == data.transaction_id).first()
@@ -163,7 +174,7 @@ def get_all_transactions(db: Session = Depends(get_db)):
         txns.append({
             "id": txn.id, "date": txn.date, "amount": txn.amount, "type": txn.type, "mode": txn.mode, "description": txn.description, 
             "bank_details": txn.bank_details, 
-            "status": txn.status, # <--- SEND STATUS TO FRONTEND
+            "status": txn.status,
             "user_name": user.name, "user_phone": user.phone, "team_id": user.team_id
         })
     return txns
@@ -177,16 +188,14 @@ def get_user_details(team_id: str, db: Session = Depends(get_db)):
     return { 
         "id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, 
         "wallet_balance": user.wallet_balance, "email": user.email, "gender": user.gender, "dob": user.dob, 
-        "play_location": user.play_location, "bank_details": user.bank_details, # <--- SEND SAVED BANK DETAILS
+        "play_location": user.play_location, "bank_details": user.bank_details,
         "registrations": reg_data 
     }
 
 @app.get("/admin/players")
 def get_all_players(db: Session = Depends(get_db)): 
-    # Return all fields including bank_details
     return db.query(models.User).all()
 
-# ... [KEEP ALL OTHER ENDPOINTS THE SAME: send-otp, register, login, etc.] ...
 @app.post("/send-otp")
 def send_otp(data: OTPRequest): return {"status": "sent", "otp": "1234"}
 
