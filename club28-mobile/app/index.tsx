@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons'; 
 import { useRouter, useFocusEffect } from 'expo-router';
 
-// ✅ FIXED IMPORT PATH (Only one dot back)
+// Make sure this path is correct for your project
 import RazorpayCheckout from '../components/RazorpayCheckout';
 
 const API_URL = "http://192.168.29.43:8000";
@@ -138,21 +138,21 @@ export default function App() {
       }
   };
 
+  // --- THIS FUNCTION WAS FIXED ---
   const confirmJoinRequest = async (request) => {
       try {
-          await axios.post(`${API_URL}/join-tournament`, {
-              phone: userData.phone,
-              tournament_name: request.tournament_name,
-              city: request.city || "Mumbai", 
-              sport: "Padel", 
-              level: request.level || "Advance",
-              partner_team_id: request.inviter_code,
-              payment_mode: "WALLET",
-              payment_scope: "INDIVIDUAL" 
+          // We use /confirm-partner instead of /join-tournament
+          // This updates the PENDING entry to CONFIRMED
+          await axios.post(`${API_URL}/confirm-partner`, {
+              reg_id: request.reg_id,  // The ID of the pending request
+              payment_mode: "WALLET"
           });
           Alert.alert("Success", "You have joined the team!");
           onRefresh();
-      } catch(e) { Alert.alert("Error", "Could not join."); }
+      } catch(e) { 
+          // Show the actual error message from backend
+          Alert.alert("Error", e.response?.data?.detail || "Could not join."); 
+      }
   };
 
   const handlePaymentSuccess = async (data) => {
@@ -280,8 +280,10 @@ export default function App() {
         <View style={styles.updatesSection}><View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}><Feather name="trending-up" size={16} color="#10b981" style={{marginRight:5}} /><Text style={styles.sectionTitle}>EARNINGS TRACKER</Text></View><View style={styles.greenCard}><Text style={styles.earningsLabel}>{activeEvent ? activeEvent.tournament.toUpperCase() : "TOTAL"} WINNINGS</Text><Text style={styles.earningsValue}>₹{eventWinnings}</Text><FontAwesome5 name="trophy" size={80} color="white" style={styles.bgIcon} /></View><View style={{marginTop: 5}}>{eventPrizeTxns.length > 0 ? eventPrizeTxns.map((txn, i) => (<View key={i} style={styles.prizeTxnRow}><View><Text style={styles.prizeTxnTitle}>{txn.description}</Text><Text style={styles.prizeTxnDate}>{new Date(txn.date).toLocaleDateString()}</Text></View><Text style={styles.prizeTxnAmount}>+₹{txn.amount}</Text></View>)) : <Text style={{color:'#999', fontSize:10, textAlign:'center', marginTop:10}}>No winnings yet.</Text>}</View></View>
       </ScrollView>
 
+      {/* RAZORPAY COMPONENT */}
       <RazorpayCheckout visible={payModal} onClose={() => setPayModal(false)} orderDetails={orderDetails} onSuccess={handlePaymentSuccess} />
 
+      {/* MODALS */}
       <Modal visible={showNotifModal} transparent animationType="fade"><View style={styles.modalBg}><View style={[styles.modalCard, {height:'60%'}]}><View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom:10}}><Text style={styles.modalTitle}>NOTIFICATIONS</Text><TouchableOpacity onPress={() => setShowNotifModal(false)}><Feather name="x" size={24} color="#333"/></TouchableOpacity></View><ScrollView style={{width:'100%'}}>{notifications.length > 0 ? notifications.map((n, i) => (<View key={i} style={[styles.notifItem, {borderBottomWidth:1, borderBottomColor:'#eee'}]}><View style={{flex:1}}><Text style={styles.notifTitle}>{n.title}</Text><Text style={styles.notifMsg}>{n.message}</Text></View><Text style={styles.notifTime}>{n.sub_text}</Text></View>)) : <Text style={{textAlign:'center', marginTop:50, color:'#999'}}>No notifications.</Text>}</ScrollView></View></View></Modal>
       <Modal visible={modalVisible} transparent animationType="slide"><View style={styles.modalBg}><View style={styles.modalCard}><Text style={styles.modalTitle}>ENTER SCORE</Text><Text style={styles.modalSub}>{selectedMatch?.t1} vs {selectedMatch?.t2}</Text><TextInput style={styles.scoreInput} placeholder="e.g. 6-4, 6-2" value={scoreInput} onChangeText={setScoreInput} autoFocus/><View style={{flexDirection:'row', gap:10}}><TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}><Text style={{color:'#666', fontWeight:'bold'}}>CANCEL</Text></TouchableOpacity><TouchableOpacity style={styles.submitBtn} onPress={submitScore} disabled={submittingScore}>{submittingScore ? <ActivityIndicator color="white"/> : <Text style={{color:'white', fontWeight:'bold'}}>SUBMIT</Text>}</TouchableOpacity></View></View></View></Modal>
 
