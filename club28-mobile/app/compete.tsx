@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Platform, StatusBar } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import axios from 'axios';
 
@@ -17,7 +17,6 @@ export default function CompeteScreen() {
   const [selectedCity, setSelectedCity] = useState("");
   const [selectedSport, setSelectedSport] = useState("All");
 
-  // Auto-refresh when screen loads
   useFocusEffect(
     useCallback(() => {
       fetchTournaments();
@@ -33,8 +32,7 @@ export default function CompeteScreen() {
       if (data.length > 0) {
         const allCities = [...new Set(data.map(t => t.city.trim().toUpperCase()))];
         setCities(allCities);
-        // Keep selection if valid, else default to first
-        if (!allCities.includes(selectedCity)) setSelectedCity(allCities[0]);
+        if (!allCities.includes(selectedCity) && allCities.length > 0) setSelectedCity(allCities[0]);
       }
     } catch (error) {
       console.log("Error fetching events:", error);
@@ -49,15 +47,12 @@ export default function CompeteScreen() {
     setRefreshing(false);
   };
 
-  // Filter Logic
   const cityFiltered = tournaments.filter(t => t.city.trim().toUpperCase() === selectedCity);
   const availableSports = ["All", ...new Set(cityFiltered.map(t => t.sport))];
   const finalList = selectedSport === "All" ? cityFiltered : cityFiltered.filter(t => t.sport === selectedSport);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F3F4F6' }}>
-      
-      {/* HEADER - COMPACT */}
       <View style={styles.blueHeader}>
         <SafeAreaView edges={['top', 'left', 'right']}>
           <View style={{flexDirection:'row', alignItems:'center', marginBottom: 10}}>
@@ -70,7 +65,6 @@ export default function CompeteScreen() {
             </View>
           </View>
           
-          {/* FILTERS - Only show if data exists */}
           {!loading && tournaments.length > 0 && (
             <View style={{marginTop: 5}}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 8}}>
@@ -108,7 +102,6 @@ export default function CompeteScreen() {
         {loading ? (
           <ActivityIndicator size="large" color="#2563eb" style={{marginTop: 50}} />
         ) : tournaments.length === 0 ? (
-          // EMPTY STATE
           <View style={{alignItems:'center', marginTop: 100, opacity:0.6}}>
              <Feather name="calendar" size={50} color="#cbd5e1" style={{marginBottom:15}}/>
              <Text style={{color:'#94a3b8', fontWeight:'bold', fontSize: 16}}>No active tournaments.</Text>
@@ -139,37 +132,44 @@ export default function CompeteScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* BOTTOM NAV - FIXED ICON */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity style={{alignItems:'center'}} onPress={() => router.push('/')}>
+            <Feather name="home" size={24} color="#9ca3af" />
+            <Text style={styles.navLabel}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={{alignItems:'center'}}>
+            <FontAwesome5 name="trophy" size={22} color="#2563eb" />
+            <Text style={[styles.navLabel, {color:'#2563eb'}]}>Compete</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={{alignItems:'center'}} onPress={() => router.push('/profile')}>
+            <Feather name="user" size={24} color="#9ca3af" />
+            <Text style={styles.navLabel}>Profile</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  blueHeader: { 
-    backgroundColor: '#2563eb', 
-    paddingHorizontal: 20, 
-    paddingBottom: 15, // Very compact padding
-    borderBottomLeftRadius: 30, 
-    borderBottomRightRadius: 30 
-  },
+  blueHeader: { backgroundColor: '#2563eb', paddingHorizontal: 20, paddingBottom: 15, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
   headerTitle: { color: 'white', fontSize: 20, fontWeight: '900', fontStyle: 'italic' },
   headerSubtitle: { color: '#bfdbfe', fontSize: 10, fontWeight: 'bold', letterSpacing: 1, marginTop: 2 },
-  
   cityPill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10, marginRight: 8 },
   cityActive: { backgroundColor: 'white' },
   cityInactive: { backgroundColor: 'rgba(255,255,255,0.1)' },
   cityText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-
   sportPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginRight: 8, borderWidth: 1 },
   sportActive: { backgroundColor: '#fbbf24', borderColor: '#fbbf24' },
   sportInactive: { backgroundColor: 'rgba(255,255,255,0.1)', borderColor: 'transparent' },
   sportText: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
-
   card: { backgroundColor: 'white', padding: 20, borderRadius: 20, marginBottom: 15, flexDirection:'row', alignItems:'center', shadowColor:'#000', shadowOpacity:0.05, shadowRadius:5, elevation:2 },
   cardTitle: { fontSize: 16, fontWeight: '900', color: '#1f2937', fontStyle:'italic' },
   cardSub: { fontSize: 11, color: '#9ca3af', fontWeight: 'bold', marginTop: 4 },
-  
   badgeBlue: { backgroundColor: '#eff6ff', color: '#2563eb', fontSize: 8, fontWeight:'bold', paddingHorizontal: 6, paddingVertical:2, borderRadius: 4, overflow:'hidden', marginRight: 5, textTransform:'uppercase' },
   badgeYellow: { backgroundColor: '#fefce8', color: '#a16207', fontSize: 8, fontWeight:'bold', paddingHorizontal: 6, paddingVertical:2, borderRadius: 4, overflow:'hidden', textTransform:'uppercase' },
-  
-  arrowBox: { backgroundColor: '#f9fafb', padding: 8, borderRadius: 50 }
+  arrowBox: { backgroundColor: '#f9fafb', padding: 8, borderRadius: 50 },
+  bottomNav: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: 'white', paddingVertical: 15, borderTopWidth: 1, borderTopColor: '#f3f4f6', position:'absolute', bottom:0, width:'100%' },
+  navLabel: { fontSize: 10, fontWeight: 'bold', color: '#9ca3af', marginTop: 4 }
 });

@@ -32,7 +32,7 @@ export default function App() {
   const [userData, setUserData] = useState(null);
   const [registrations, setRegistrations] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [transactions, setTransactions] = useState([]); // Store all txns
+  const [transactions, setTransactions] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("PERSONAL");
 
@@ -100,7 +100,7 @@ export default function App() {
 
       const txnRes = await axios.get(`${API_URL}/user/${tid}/transactions`);
       const allTxns = txnRes.data;
-      setTransactions(allTxns); // Save full list
+      setTransactions(allTxns);
       
       const winnings = allTxns
         .filter(t => t.mode === 'PRIZE')
@@ -406,7 +406,6 @@ export default function App() {
             </View>
         </View>
 
-        {/* --- EARNINGS TRACKER (WITH LIST) --- */}
         <View style={styles.updatesSection}>
             <View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}>
                 <Feather name="trending-up" size={16} color="#10b981" style={{marginRight:5}} />
@@ -418,7 +417,7 @@ export default function App() {
                 <FontAwesome5 name="trophy" size={80} color="white" style={styles.bgIcon} />
             </View>
             
-            {/* PRIZE LIST */}
+            {/* TRANSACTION LIST */}
             <View style={{marginTop: 5}}>
                 {prizeTxns.length > 0 ? prizeTxns.map((txn, i) => (
                     <View key={i} style={styles.prizeTxnRow}>
@@ -457,7 +456,7 @@ export default function App() {
             <FontAwesome5 name="trophy" size={22} color="#9ca3af" />
             <Text style={styles.navLabel}>Compete</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={{alignItems:'center'}}>
+        <TouchableOpacity style={{alignItems:'center'}} onPress={() => router.push('/profile')}>
             <Feather name="user" size={24} color="#9ca3af" />
             <Text style={styles.navLabel}>Profile</Text>
         </TouchableOpacity>
