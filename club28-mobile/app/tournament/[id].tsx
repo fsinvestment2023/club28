@@ -5,6 +5,8 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ✅ CORRECT IMPORT PATH FOR NESTED FOLDER (Two dots back)
 import RazorpayCheckout from '../../components/RazorpayCheckout';
 
 const API_URL = "http://192.168.29.43:8000";
@@ -44,13 +46,20 @@ export default function RegistrationScreen() {
     finally { setLoading(false); }
   };
 
-  const handleJoin = async () => {
+  const handleJoin = async (scope = 'INDIVIDUAL') => {
     if (!selectedLevel) return Alert.alert("Select a Level");
     if (tournament.format === "Doubles" && !partnerId) return Alert.alert("Partner Required", "Enter Partner Team ID");
     
+    // ✅ FIXED FEE CALCULATION
+    const isDoublesSplit = tournament.format === "Doubles" && scope === 'INDIVIDUAL';
+    
+    // IF SPLIT: Pay Base Fee (500)
+    // IF TEAM: Pay Base Fee * 2 (1000)
+    const feeToPay = isDoublesSplit ? parseInt(selectedLevel.fee) : (parseInt(selectedLevel.fee) * 2);
+
     // CHECK BALANCE
-    if (user.wallet_balance < selectedLevel.fee) {
-        const shortfall = selectedLevel.fee - user.wallet_balance;
+    if (user.wallet_balance < feeToPay) {
+        const shortfall = feeToPay - user.wallet_balance;
         Alert.alert("Low Balance", `Add ₹${shortfall} to continue?`, [
             { text: "Cancel", style: "cancel" },
             { text: "Add & Pay", onPress: () => initiateTopUp(shortfall) }
@@ -68,11 +77,14 @@ export default function RegistrationScreen() {
         level: selectedLevel.name,
         partner_team_id: partnerId.toUpperCase(),
         payment_mode: "WALLET",
-        payment_scope: "INDIVIDUAL"
+        payment_scope: scope
       };
       const res = await axios.post(`${API_URL}/join-tournament`, payload);
-      if (res.data.status === "joined" || res.data.status === "pending_partner") {
-        Alert.alert("Success!", "You have joined the tournament.", [{ text: "OK", onPress: () => router.push('/') }]);
+      
+      if (res.data.status === "pending_partner") {
+        Alert.alert("Registered!", `We notified ${partnerId.toUpperCase()}. They must confirm payment.`, [{ text: "Close", onPress: () => router.push('/') }]);
+      } else if (res.data.status === "joined") {
+        Alert.alert("Success!", "Registration Complete!", [{ text: "OK", onPress: () => router.push('/') }]);
       }
     } catch (error) {
       Alert.alert("Error", error.response?.data?.detail || "Join Failed");
@@ -104,10 +116,9 @@ export default function RegistrationScreen() {
             team_id: user.team_id,
             amount: orderDetails.amount / 100 
         });
-        // REFRESH USER & RETRY JOIN
         const userRes = await axios.get(`${API_URL}/user/${user.team_id}`);
         setUser(userRes.data);
-        handleJoin(); 
+        Alert.alert("Balance Updated", "Please click Pay again.");
     } catch (e) { Alert.alert("Failed", "Payment verification failed"); }
   };
 
@@ -135,7 +146,7 @@ export default function RegistrationScreen() {
         </SafeAreaView>
       </View>
 
-      <ScrollView contentContainerStyle={{padding: 20, paddingBottom: 120}}>
+      <ScrollView contentContainerStyle={{padding: 20, paddingBottom: 180}}>
         <View style={styles.card}>
             <Text style={styles.sectionTitle}>SELECT LEVEL</Text>
             {categories.map((cat, idx) => (
@@ -162,16 +173,27 @@ export default function RegistrationScreen() {
         {isDoubles && (<View style={styles.card}><Text style={styles.sectionTitle}>DOUBLES PARTNER</Text><TextInput style={styles.input} placeholder="Partner Team ID (e.g. SA25)" value={partnerId} onChangeText={setPartnerId} autoCapitalize="characters"/></View>)}
       </ScrollView>
 
-      {/* RAZORPAY INTEGRATION */}
       <RazorpayCheckout visible={payModal} onClose={() => setPayModal(false)} orderDetails={orderDetails} onSuccess={handlePaymentSuccess} />
 
       <View style={styles.footer}>
-        <View><Text style={{fontSize:10, fontWeight:'bold', color:'#999'}}>TOTAL ENTRY FEE</Text><Text style={{fontSize:24, fontWeight:'900', color:'#1f2937'}}>₹{selectedLevel?.fee || 0}</Text></View>
-        
-        {/* FIXED BUTTON */}
-        <TouchableOpacity style={styles.payBtn} onPress={handleJoin} disabled={joining}>
-            {joining ? <ActivityIndicator color="white"/> : <Text style={styles.payText}>PAY ENTRY</Text>}
-        </TouchableOpacity>
+        {isDoubles ? (
+            <View style={{width:'100%'}}>
+                <TouchableOpacity style={styles.payShareBtn} onPress={() => handleJoin('INDIVIDUAL')} disabled={joining}>
+                    <Text style={styles.payShareText}>PAY MY SHARE (₹{selectedLevel?.fee || 0})</Text>
+                </TouchableOpacity>
+                <Text style={styles.warningText}>ⓘ No refund if partner doesn't join.</Text>
+                <TouchableOpacity style={styles.payFullBtn} onPress={() => handleJoin('TEAM')} disabled={joining}>
+                    <Text style={styles.payFullText}>PAY FULL TEAM (₹{selectedLevel?.fee ? selectedLevel.fee * 2 : 0})</Text>
+                </TouchableOpacity>
+            </View>
+        ) : (
+            <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', width:'100%'}}>
+                <View><Text style={{fontSize:10, fontWeight:'bold', color:'#999'}}>TOTAL ENTRY FEE</Text><Text style={{fontSize:24, fontWeight:'900', color:'#1f2937'}}>₹{selectedLevel?.fee || 0}</Text></View>
+                <TouchableOpacity style={styles.payBtn} onPress={() => handleJoin('INDIVIDUAL')} disabled={joining}>
+                    {joining ? <ActivityIndicator color="white"/> : <Text style={styles.payText}>PAY ENTRY</Text>}
+                </TouchableOpacity>
+            </View>
+        )}
       </View>
     </View>
   );
@@ -196,7 +218,14 @@ const styles = StyleSheet.create({
   levelTitle: { fontWeight: 'bold', fontSize: 14, color: '#333' },
   price: { fontWeight: '900', fontSize: 16, color: '#333' },
   input: { backgroundColor: '#f3f4f6', padding: 15, borderRadius: 10, fontWeight:'bold', fontSize: 16 },
-  footer: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'white', padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderColor: '#f3f4f6' },
-  payBtn: { backgroundColor: '#2563eb', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 15 },
-  payText: { color: 'white', fontWeight: 'bold', fontSize: 14 }
+  
+  footer: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'white', padding: 20, borderTopWidth: 1, borderColor: '#f3f4f6' },
+  payBtn: { backgroundColor: '#2563eb', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 15, alignItems: 'center' },
+  payText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
+  
+  payShareBtn: { backgroundColor: '#2563eb', paddingVertical: 15, borderRadius: 10, alignItems: 'center', marginBottom: 5 },
+  payShareText: { color: 'white', fontWeight: 'bold', fontSize: 14, textTransform: 'uppercase' },
+  payFullBtn: { backgroundColor: 'black', paddingVertical: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  payFullText: { color: 'white', fontWeight: 'bold', fontSize: 14, textTransform: 'uppercase' },
+  warningText: { textAlign: 'center', fontSize: 10, color: '#666', fontStyle: 'italic' }
 });

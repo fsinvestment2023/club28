@@ -9,7 +9,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
-// IMPORT THE NEW COMPONENT
+
+// ✅ FIXED IMPORT PATH
 import RazorpayCheckout from '../components/RazorpayCheckout';
 
 const API_URL = "http://192.168.29.43:8000";
@@ -62,10 +63,8 @@ export default function ProfileScreen() {
     finally { setLoading(false); }
   };
 
-  // --- ADD MONEY LOGIC ---
   const initiateAddMoney = async () => {
     try {
-        // Defaulting to ₹100 for testing. You can add an input for this later.
         const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: 100 }); 
         setOrderDetails({
             ...res.data, 
@@ -87,7 +86,7 @@ export default function ProfileScreen() {
             razorpay_order_id: data.razorpay_order_id,
             razorpay_signature: data.razorpay_signature,
             team_id: userData.team_id,
-            amount: 100 // Must match the order amount
+            amount: 100 
         });
         Alert.alert("Success", `Wallet Updated! New Balance: ₹${res.data.new_balance}`);
         fetchProfileData(); 
@@ -174,7 +173,6 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
 
-      {/* RAZORPAY COMPONENT INTEGRATED */}
       <RazorpayCheckout 
         visible={payModal} 
         onClose={() => setPayModal(false)} 
