@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  Alert, TextInput, ActivityIndicator, Modal 
+  Alert, TextInput, ActivityIndicator, Modal, KeyboardAvoidingView, Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
@@ -10,7 +10,6 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
-// ✅ FIXED IMPORT PATH
 import RazorpayCheckout from '../components/RazorpayCheckout';
 
 const API_URL = "http://192.168.29.43:8000";
@@ -23,7 +22,7 @@ export default function ProfileScreen() {
   const [transactions, setTransactions] = useState([]);
   const [history, setHistory] = useState([]);
   
-  // EDIT STATE
+  // EDIT PROFILE STATE
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({ email: "", gender: "", dob: "", play_location: "" });
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -32,6 +31,10 @@ export default function ProfileScreen() {
   const [withdrawModal, setWithdrawModal] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [bankDetails, setBankDetails] = useState({ bank: "", acc: "", ifsc: "" });
+
+  // ADD MONEY STATE (New)
+  const [addMoneyModal, setAddMoneyModal] = useState(false);
+  const [addAmount, setAddAmount] = useState("");
 
   // PAYMENT STATE
   const [payModal, setPayModal] = useState(false);
@@ -63,16 +66,34 @@ export default function ProfileScreen() {
     finally { setLoading(false); }
   };
 
-  const initiateAddMoney = async () => {
+  // 1. OPEN ADD MONEY MODAL
+  const openAddMoney = () => {
+      setAddAmount("");
+      setAddMoneyModal(true);
+  };
+
+  // 2. PROCEED TO PAYMENT (After entering amount)
+  const initiateAddMoneyPayment = async () => {
+    const amount = parseInt(addAmount);
+    if (!amount || amount <= 0) {
+        Alert.alert("Invalid Amount", "Please enter a valid amount.");
+        return;
+    }
+    setAddMoneyModal(false); // Close input modal
+
     try {
-        const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: 100 }); 
+        const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: amount }); 
+        
+        // FIX: Map key_id to key for the frontend component
         setOrderDetails({
             ...res.data, 
+            key: res.data.key_id, // <--- CRITICAL FIX FOR RAZORPAY ERROR
             description: "Wallet Recharge",
             contact: userData.phone,
-            email: userData.email || "player@example.com"
+            email: userData.email || "player@example.com",
+            amount: res.data.amount || (amount * 100) // Ensure amount is passed correctly
         });
-        setPayModal(true);
+        setPayModal(true); // Open Razorpay
     } catch (e) {
         Alert.alert("Error", "Could not create payment order. Is Backend running?");
     }
@@ -86,7 +107,7 @@ export default function ProfileScreen() {
             razorpay_order_id: data.razorpay_order_id,
             razorpay_signature: data.razorpay_signature,
             team_id: userData.team_id,
-            amount: 100 
+            amount: orderDetails.amount / 100 
         });
         Alert.alert("Success", `Wallet Updated! New Balance: ₹${res.data.new_balance}`);
         fetchProfileData(); 
@@ -96,7 +117,20 @@ export default function ProfileScreen() {
   };
 
   const handleSaveProfile = async () => { try { await axios.post(`${API_URL}/user/update-profile`, { team_id: userData.team_id, ...formData }); Alert.alert("Success", "Profile Updated!"); setEditing(false); fetchProfileData(); } catch (e) { Alert.alert("Error", "Update failed"); } };
-  const handleWithdraw = async () => { if (!withdrawAmount || !bankDetails.acc) return Alert.alert("Error", "Fill all details"); try { const bankString = `Bank: ${bankDetails.bank} | Acc: ${bankDetails.acc} | IFSC: ${bankDetails.ifsc}`; await axios.post(`${API_URL}/user/withdraw`, { team_id: userData.team_id, amount: parseInt(withdrawAmount), bank_details: bankString }); setWithdrawModal(false); Alert.alert("Success", "Request Sent!"); fetchProfileData(); } catch (e) { Alert.alert("Error", "Withdrawal Failed"); } };
+  
+  const handleWithdraw = async () => { 
+      if (!withdrawAmount || !bankDetails.acc) return Alert.alert("Error", "Fill all details"); 
+      try { 
+          const bankString = `Bank: ${bankDetails.bank} | Acc: ${bankDetails.acc} | IFSC: ${bankDetails.ifsc}`; 
+          await axios.post(`${API_URL}/user/withdraw`, { team_id: userData.team_id, amount: parseInt(withdrawAmount), bank_details: bankString }); 
+          setWithdrawModal(false); 
+          Alert.alert("Success", "Request Sent!"); 
+          fetchProfileData(); 
+      } catch (e) { 
+          Alert.alert("Error", "Withdrawal Failed. Check Balance."); 
+      } 
+  };
+
   const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); router.replace('/'); };
   const handleDateChange = (event, selectedDate) => { setShowDatePicker(false); if (selectedDate) { const d = selectedDate; setFormData({ ...formData, dob: `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}` }); } };
   const formatTextDate = (text) => { const cleaned = text.replace(/[^0-9]/g, ''); if (cleaned.length <= 2) return cleaned; if (cleaned.length <= 4) return `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`; return `${cleaned.slice(0, 2)}/${cleaned.slice(2, 4)}/${cleaned.slice(4, 8)}`; };
@@ -154,7 +188,7 @@ export default function ProfileScreen() {
                     <Text style={styles.earningsValue}>₹{userData?.wallet_balance}</Text>
                     <FontAwesome5 name="wallet" size={60} color="white" style={styles.bgIcon} />
                     <View style={{flexDirection:'row', marginTop: 20, gap: 10}}>
-                        <TouchableOpacity style={styles.wBtnWhite} onPress={initiateAddMoney}>
+                        <TouchableOpacity style={styles.wBtnWhite} onPress={openAddMoney}>
                             <Text style={{color:'#10b981', fontWeight:'bold'}}>+ ADD</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.wBtnOutline} onPress={() => setWithdrawModal(true)}><Text style={{color:'white', fontWeight:'bold'}}>- WITHDRAW</Text></TouchableOpacity>
@@ -173,6 +207,7 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
 
+      {/* RAZORPAY COMPONENT */}
       <RazorpayCheckout 
         visible={payModal} 
         onClose={() => setPayModal(false)} 
@@ -180,7 +215,53 @@ export default function ProfileScreen() {
         onSuccess={handlePaymentSuccess} 
       />
 
-      <Modal visible={withdrawModal} transparent animationType="slide"><View style={styles.modalBg}><View style={styles.modalCard}><Text style={styles.modalTitle}>WITHDRAW FUNDS</Text><Text style={{color:'#666', marginBottom:15}}>Available: ₹{userData?.wallet_balance}</Text><TextInput style={styles.modalInput} placeholder="Amount (₹)" keyboardType="number-pad" value={withdrawAmount} onChangeText={setWithdrawAmount} /><TextInput style={styles.modalInput} placeholder="Bank Name" value={bankDetails.bank} onChangeText={t=>setBankDetails({...bankDetails, bank:t})} /><TextInput style={styles.modalInput} placeholder="Account Number" keyboardType="number-pad" value={bankDetails.acc} onChangeText={t=>setBankDetails({...bankDetails, acc:t})} /><TextInput style={styles.modalInput} placeholder="IFSC Code" value={bankDetails.ifsc} onChangeText={t=>setBankDetails({...bankDetails, ifsc:t})} /><View style={{flexDirection:'row', gap:10, marginTop:10}}><TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModal(false)}><Text style={{fontWeight:'bold', color:'#666'}}>CANCEL</Text></TouchableOpacity><TouchableOpacity style={styles.submitBtn} onPress={handleWithdraw}><Text style={{fontWeight:'bold', color:'white'}}>CONFIRM</Text></TouchableOpacity></View></View></View></Modal>
+      {/* ADD MONEY MODAL */}
+      <Modal visible={addMoneyModal} transparent animationType="slide">
+        <View style={styles.modalBg}>
+            <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>ADD MONEY</Text>
+                <Text style={{color:'#666', marginBottom:15}}>Enter amount to add to wallet</Text>
+                <TextInput 
+                    style={styles.modalInput} 
+                    placeholder="Amount (₹)" 
+                    keyboardType="number-pad" 
+                    value={addAmount} 
+                    onChangeText={setAddAmount}
+                    autoFocus
+                />
+                <View style={{flexDirection:'row', gap:10, marginTop:10}}>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setAddMoneyModal(false)}>
+                        <Text style={{fontWeight:'bold', color:'#666'}}>CANCEL</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.submitBtn} onPress={initiateAddMoneyPayment}>
+                        <Text style={{fontWeight:'bold', color:'white'}}>PROCEED</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+      </Modal>
+
+      {/* WITHDRAW MODAL */}
+      <Modal visible={withdrawModal} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBg}>
+            <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>WITHDRAW FUNDS</Text>
+                <Text style={{color:'#666', marginBottom:15}}>Available: ₹{userData?.wallet_balance}</Text>
+                <TextInput style={styles.modalInput} placeholder="Amount (₹)" keyboardType="number-pad" value={withdrawAmount} onChangeText={setWithdrawAmount} />
+                <TextInput style={styles.modalInput} placeholder="Bank Name" value={bankDetails.bank} onChangeText={t=>setBankDetails({...bankDetails, bank:t})} />
+                <TextInput style={styles.modalInput} placeholder="Account Number" keyboardType="number-pad" value={bankDetails.acc} onChangeText={t=>setBankDetails({...bankDetails, acc:t})} />
+                <TextInput style={styles.modalInput} placeholder="IFSC Code" value={bankDetails.ifsc} onChangeText={t=>setBankDetails({...bankDetails, ifsc:t})} />
+                <View style={{flexDirection:'row', gap:10, marginTop:10}}>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModal(false)}>
+                        <Text style={{fontWeight:'bold', color:'#666'}}>CANCEL</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.submitBtn} onPress={handleWithdraw}>
+                        <Text style={{fontWeight:'bold', color:'white'}}>CONFIRM</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <View style={styles.bottomNav}>
         <TouchableOpacity style={{alignItems:'center'}} onPress={() => router.push('/')}><Feather name="home" size={24} color="#9ca3af" /><Text style={styles.navLabel}>Home</Text></TouchableOpacity>
