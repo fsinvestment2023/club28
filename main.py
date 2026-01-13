@@ -19,19 +19,19 @@ from exponent_server_sdk import PushMessage
 from exponent_server_sdk import PushServerError
 from requests.exceptions import ConnectionError, HTTPError
 
-# Create Database Tables
-Base.metadata.create_all(bind=engine)
-
-# --- NOTIFICATION FACTS DATA ---
+# --- NOTIFICATION FACTS DATA (Default Fallback) ---
 FACTS_DB = [
     "🎾 Did you know? Padel was invented in Mexico in 1969!",
     "🚀 Pickleball is the fastest growing sport in the USA!",
-    "🎾 The longest tennis match lasted 11 hours and 5 minutes (Isner vs Mahut).",
+    "🎾 The longest tennis match lasted 11 hours and 5 minutes.",
     "🌍 Padel is played by over 25 million people across 90 countries.",
-    "🏆 Wimbledon uses 54,250 tennis balls during the tournament period.",
+    "🏆 Wimbledon uses 54,250 tennis balls during the tournament.",
     "💡 Padel walls are part of the game! Use them to your advantage.",
     "👟 Running shoes are bad for Padel! Use court shoes for grip.",
 ]
+
+# Create Database Tables
+Base.metadata.create_all(bind=engine)
 
 # --- SCHEDULER & LIFESPAN ---
 scheduler = AsyncIOScheduler()
@@ -39,15 +39,13 @@ scheduler = AsyncIOScheduler()
 def send_push_alert(token, title, body):
     if not token: return
     try:
-        # Check if it's an Expo token
-        if not token.startswith('ExponentPushToken'):
-            print(f"⚠️ Invalid Token format: {token}")
-            return
-
-        response = PushClient().publish(
+        # Basic check to avoid sending to invalid/empty tokens
+        if not token.startswith('ExponentPushToken'): return
+        
+        PushClient().publish(
             PushMessage(to=token, title=title, body=body)
         )
-        print(f"✅ Push Sent to {token[:15]}... Status: {response.status}")
+        print(f"✅ Push Sent to {token[:15]}...")
     except Exception as e:
         print(f"❌ Push Error: {e}")
 
@@ -55,12 +53,9 @@ def parse_match_datetime(date_str, time_str):
     # ROBUST TIME PARSER: Tries ALL formats (US, Int'l, AM/PM)
     dt_str = f"{date_str} {time_str}"
     formats = [
-        # Indian/European Formats (DD/MM/YYYY)
         "%d/%m/%Y %I:%M %p",    # 13/01/2026 10:45 PM
         "%d/%m/%Y %I:%M%p",     # 13/01/2026 10:45PM
         "%d/%m/%Y %H:%M",       # 13/01/2026 22:45
-        
-        # Standard Database Formats (YYYY-MM-DD)
         "%Y-%m-%d %H:%M",       # 2026-01-13 22:45
         "%Y-%m-%d %I:%M %p",    # 2026-01-13 10:45 PM
         "%Y-%m-%d %I:%M%p",     # 2026-01-13 10:45PM
@@ -74,13 +69,18 @@ def parse_match_datetime(date_str, time_str):
     return None
 
 def check_match_reminders():
-    # Runs often to check for upcoming matches
+    # RUNS EVERY 1 MINUTE (Dynamic Logic)
     db = SessionLocal()
     try:
+        # 1. Fetch Dynamic Settings from DB
+        setting = db.query(models.SystemSettings).filter(models.SystemSettings.key == "reminder_hours").first()
+        # Default to [24, 2] if not set in Admin Panel yet
+        reminder_hours = json.loads(setting.value) if setting else [24, 2]
+
         matches = db.query(models.Match).filter(models.Match.status == "Scheduled").all()
         now = datetime.now()
-        print(f"🤖 Scheduler Checking {len(matches)} matches at {now.strftime('%H:%M:%S')}...")
-        
+        print(f"🤖 Checking Matches. Active Rules: {reminder_hours} hours before.")
+
         for m in matches:
             match_dt = parse_match_datetime(m.date, m.time)
             
@@ -90,20 +90,24 @@ def check_match_reminders():
 
             time_diff = match_dt - now
             hours_left = time_diff.total_seconds() / 3600
+            
+            # Helper: Get list of hours we ALREADY sent for this match
+            # Stored in DB as string "24,12,2"
+            sent_list = m.sent_reminders.split(",") if m.sent_reminders else []
 
-            # 1. 24 HOUR REMINDER (23.5 - 24.5 hours)
-            if 23.5 <= hours_left <= 24.5 and not m.reminder_24h_sent:
-                print(f"⏰ Sending 24h Reminder for Match #{m.id}")
-                send_match_alert(db, m, "24 hours to go! ⏰", f"Match vs {m.t2} is tomorrow at {m.time}!")
-                m.reminder_24h_sent = True
-                db.commit()
+            for h in reminder_hours:
+                # Logic: Check if we are within a 30-min window of the target hour 
+                # AND ensure we haven't sent this specific hour reminder yet
+                if (h - 0.5) <= hours_left <= (h + 0.5) and str(h) not in sent_list:
+                    print(f"⏰ Sending {h}h Reminder for Match #{m.id}")
+                    
+                    send_match_alert(db, m, f"{h} Hours to Go! ⏰", f"Match vs {m.t2} is starting in {h} hours!")
+                    
+                    # Update Log in DB so we don't send it twice
+                    sent_list.append(str(h))
+                    m.sent_reminders = ",".join(sent_list)
+                    db.commit()
 
-            # 2. 2 HOUR REMINDER (1.5 - 2.5 hours)
-            if 1.5 <= hours_left <= 2.5 and not m.reminder_2h_sent:
-                print(f"🎾 Sending 2h Reminder for Match #{m.id}")
-                send_match_alert(db, m, "Match starts in 2h! 🎾", f"Get ready! You play at {m.time}.")
-                m.reminder_2h_sent = True
-                db.commit()
     except Exception as e:
         print(f"Scheduler Error: {e}")
     finally:
@@ -130,7 +134,7 @@ def send_random_fact():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # UPDATED: Run every 1 minute for easier testing (Change back to 15 later if desired)
+    # Runs often to catch the dynamic windows
     scheduler.add_job(check_match_reminders, 'interval', minutes=1)
     scheduler.add_job(send_random_fact, 'interval', days=2)
     scheduler.start()
@@ -235,13 +239,35 @@ class SystemNotifCreate(BaseModel): type: str; title: str; message: str
 class RazorpayOrder(BaseModel): amount: int
 class RazorpayVerify(BaseModel): razorpay_payment_id: str; razorpay_order_id: str; razorpay_signature: str; team_id: str; amount: int
 class PushTokenUpdate(BaseModel): team_id: str; token: str
+# NEW SCHEMA FOR SETTINGS
+class SettingsUpdate(BaseModel): key: str; value: list 
 
 # --- ENDPOINTS ---
 
 @app.get("/")
 def read_root(): return {"message": "Club 28 Backend is Online!"}
 
-# --- NEW: TEST NOTIFICATION ENDPOINT ---
+# --- NEW: SYSTEM SETTINGS ENDPOINTS (For Admin Panel) ---
+@app.post("/admin/update-settings")
+def update_settings(data: SettingsUpdate, db: Session = Depends(get_db)):
+    setting = db.query(models.SystemSettings).filter(models.SystemSettings.key == data.key).first()
+    if not setting:
+        # Create new
+        setting = models.SystemSettings(key=data.key, value=json.dumps(data.value))
+        db.add(setting)
+    else:
+        # Update existing
+        setting.value = json.dumps(data.value)
+    db.commit()
+    return {"status": "updated", "value": data.value}
+
+@app.get("/admin/get-settings/{key}")
+def get_settings(key: str, db: Session = Depends(get_db)):
+    setting = db.query(models.SystemSettings).filter(models.SystemSettings.key == key).first()
+    if not setting:
+        return {"value": []}
+    return {"value": json.loads(setting.value)}
+
 @app.get("/admin/trigger-test-notification")
 def trigger_test_notification(db: Session = Depends(get_db)):
     users = db.query(models.User).filter(models.User.push_token != None).all()
@@ -257,7 +283,7 @@ def update_push_token(data: PushTokenUpdate, db: Session = Depends(get_db)):
     if not user: raise HTTPException(status_code=404, detail="User not found")
     user.push_token = data.token
     db.commit()
-    print(f"🔑 Token Updated for {user.name}: {data.token[:20]}...")
+    print(f"🔑 Token Updated for {user.name}")
     return {"status": "updated"}
 
 # --- PAYMENT ENDPOINTS ---
@@ -281,6 +307,9 @@ def verify_razorpay_payment(data: RazorpayVerify, db: Session = Depends(get_db))
     user.wallet_balance += data.amount
     db.add(models.Transaction(user_id=user.id, amount=data.amount, type="CREDIT", mode="WALLET_TOPUP", description=f"Razorpay Add: {data.razorpay_payment_id}"))
     db.commit()
+    # PUSH TRIGGER
+    if user.push_token:
+        send_push_alert(user.push_token, "Wallet Updated 💰", f"₹{data.amount} added to your wallet!")
     return {"status": "success", "new_balance": user.wallet_balance}
 
 @app.post("/user/withdraw")
@@ -314,13 +343,16 @@ def get_all_transactions(db: Session = Depends(get_db)):
 def get_user_details(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: raise HTTPException(status_code=404, detail="User not found")
+    
     regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
     reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
+    
     pending = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Pending_Payment").all()
     pending_list = []
     for p in pending:
         partner = db.query(models.User).filter(models.User.id == p.partner_id).first()
         tourney = db.query(models.Tournament).filter(models.Tournament.name == p.tournament_name, models.Tournament.city == p.city).first()
+        
         fee = 0
         if tourney:
             try:
@@ -329,6 +361,7 @@ def get_user_details(team_id: str, db: Session = Depends(get_db)):
                     if c['name'] == p.category: fee = safe_int(c.get('fee')); break
             except: pass
         pending_list.append({ "reg_id": p.id, "tournament_name": p.tournament_name, "city": p.city, "level": p.category, "inviter_code": f"{partner.name} ({partner.team_id})" if partner else "Unknown", "amount_due": fee })
+    
     return { "id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance, "email": user.email, "gender": user.gender, "dob": user.dob, "play_location": user.play_location, "bank_details": user.bank_details, "registrations": reg_data, "pending_requests": pending_list }
 
 @app.get("/admin/players")
@@ -382,7 +415,8 @@ def update_club_info(data: ClubInfoUpdate, db: Session = Depends(get_db)):
     if not info:
         info = models.ClubInfo(section_name=data.section, content=data.content)
         db.add(info)
-    else: info.content = data.content
+    else:
+        info.content = data.content
     db.commit()
     return {"status": "updated"}
 
@@ -635,7 +669,6 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
     matches = db.query(models.Match).filter(models.Match.category == tournament, models.Match.city == city, models.Match.status == "Official").all()
     standings = []
     processed_ids = []
-    
     for reg in results:
         if reg.id in processed_ids: continue
         user = db.query(models.User).filter(models.User.id == reg.user_id).first()

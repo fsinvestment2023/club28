@@ -17,8 +17,6 @@ class User(Base):
     dob = Column(String, default="")
     play_location = Column(String, default="")
     bank_details = Column(String, default="") 
-    
-    # NEW: Store the address for push notifications
     push_token = Column(String, default=None) 
     
     registration_date = Column(DateTime(timezone=True), server_default=func.now()) 
@@ -67,8 +65,7 @@ class Tournament(Base):
     schedule = Column(String, default="[]")
     settings = Column(String, default="[]")
     draw_size = Column(Integer, default=16)
-    created_at = Column(DateTime(timezone=True), server_default=func.now()) # Used for "New Event" alerts
-
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     __table_args__ = (UniqueConstraint('name', 'city', 'sport', name='_name_city_sport_uc'),)
 
 class Match(Base):
@@ -81,14 +78,13 @@ class Match(Base):
     t2 = Column(String)            
     score = Column(String, default=None)
     status = Column(String, default="Scheduled")
-    date = Column(String) # Format YYYY-MM-DD
-    time = Column(String) # Format HH:MM
+    date = Column(String) 
+    time = Column(String) 
     stage = Column(String, default="Group")
     submitted_by_team = Column(String, default=None)
     
-    # NEW: Track if we sent reminders so we don't send duplicates
-    reminder_24h_sent = Column(Boolean, default=False)
-    reminder_2h_sent = Column(Boolean, default=False)
+    # NEW: Stores comma-separated hours sent (e.g., "24,12,2")
+    sent_reminders = Column(String, default="") 
 
 class ClubInfo(Base):
     __tablename__ = "club_info"
@@ -104,3 +100,10 @@ class Notification(Base):
     title = Column(String)
     message = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+# NEW TABLE: Stores dynamic settings (Reminders, Facts, etc.)
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True) # e.g. "reminder_hours"
+    value = Column(String)            # e.g. "[24, 12, 2]"

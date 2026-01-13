@@ -56,8 +56,6 @@ const Dashboard = () => {
   const [notifTitle, setNotifTitle] = useState("");
   const [notifBody, setNotifBody] = useState("");
   const [newFact, setNewFact] = useState("");
-  // Simulating fetched facts since they are currently hardcoded in main.py
-  // In a real production version, you would fetch these from an API endpoint
   const [factsList, setFactsList] = useState([
     "🎾 Did you know? Padel was invented in Mexico in 1969!",
     "🚀 Pickleball is the fastest growing sport in the USA!",
@@ -65,6 +63,7 @@ const Dashboard = () => {
     "🌍 Padel is played by over 25 million people across 90 countries.",
     "🏆 Wimbledon uses 54,250 tennis balls during the tournament."
   ]);
+  const [reminderHours, setReminderHours] = useState([24, 2]);
 
   const API_URL = "http://127.0.0.1:8000"; 
 
@@ -128,7 +127,6 @@ const Dashboard = () => {
 
   const handleSendTestNotification = async () => {
       if(!notifTitle || !notifBody) return alert("Enter Title and Body");
-      // This uses the create-notification endpoint which we updated to send push
       await fetch(`${API_URL}/admin/create-notification`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -143,17 +141,14 @@ const Dashboard = () => {
       if(!newFact) return;
       setFactsList([...factsList, newFact]);
       setNewFact("");
-      // In real implementation: API call to save fact to DB
   };
 
   const handleDeleteFact = (index) => {
       const newFacts = [...factsList];
       newFacts.splice(index, 1);
       setFactsList(newFacts);
-      // In real implementation: API call to delete fact
   };
 
-  // --- NEW: CONFIRM PAYMENT ---
   const handleConfirmPayment = async (txnId) => {
       if(!window.confirm("Mark this payment as COMPLETED manually?")) return;
       try {
@@ -192,10 +187,19 @@ const Dashboard = () => {
       if(isAuthenticated) { 
           if (activeTab === "PLAYERS") fetchPlayers(); 
           else if (activeTab === "ACCOUNTS") fetchTransactions();
-          else if (activeTab === "CONTENT") fetchAppContent(); 
+          else if (activeTab === "CONTENT") { fetchAppContent(); }
           else if (activeTab === "MANAGE" && selectedTournament) { fetchMatches(); fetchTournamentPlayers(); fetchLeaderboard(); } else { fetchMatches(); } 
       } 
   }, [selectedTournament, isAuthenticated, activeTab, viewMode, activeLevelTab]); 
+
+  // Fetch settings on login
+  useEffect(() => {
+    if (isAuthenticated) {
+        fetch(`${API_URL}/admin/get-settings/reminder_hours`)
+            .then(res => res.json())
+            .then(data => { if(data.value && data.value.length > 0) setReminderHours(data.value); });
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => { if (selectedTournament && !activeLevelTab) { try { const cats = JSON.parse(selectedTournament.settings || "[]"); if (cats.length > 0) setActiveLevelTab(cats[0].name); } catch(e) {} } }, [selectedTournament]);
 
@@ -421,7 +425,7 @@ const Dashboard = () => {
                     <button onClick={handleUpdateContent} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-wide hover:bg-gray-800">Save Content</button>
                 </div>
 
-                {/* --- NEW: NOTIFICATION CONTROL PANEL --- */}
+                {/* --- NOTIFICATION CONTROL PANEL --- */}
                 <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 max-w-4xl">
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Bell size={20}/> Notification Control</h3>
                     
@@ -434,21 +438,60 @@ const Dashboard = () => {
                             <button onClick={handleSendTestNotification} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><Send size={16}/> Send Now</button>
                         </div>
 
-                        {/* FACTS MANAGER */}
-                        <div>
-                            <h4 className="font-bold text-sm text-gray-500 uppercase mb-4">🧠 Manage Facts (Random Rotation)</h4>
-                            <div className="flex gap-2 mb-4">
-                                <input value={newFact} onChange={e => setNewFact(e.target.value)} placeholder="Add a new sport fact..." className="flex-1 p-3 rounded-lg border border-gray-200 font-medium text-sm"/>
-                                <button onClick={handleAddFact} className="bg-black text-white px-4 rounded-lg font-bold hover:bg-gray-800">+</button>
+                        {/* REMINDER & FACTS SETTINGS */}
+                        <div className="space-y-8">
+                            
+                            {/* REMINDER SCHEDULE */}
+                            <div>
+                                <h4 className="font-bold text-sm text-gray-500 uppercase mb-4">⏰ Reminder Schedule (Hours Before)</h4>
+                                <div className="flex gap-2 mb-4">
+                                    <input id="newReminderHour" type="number" placeholder="Add Hour (e.g. 12)" className="flex-1 p-3 rounded-lg border border-gray-200 font-medium text-sm"/>
+                                    <button onClick={async () => {
+                                        const val = document.getElementById("newReminderHour").value;
+                                        if(!val) return;
+                                        const newHours = [...reminderHours, parseInt(val)].sort((a,b) => b-a);
+                                        setReminderHours(newHours);
+                                        await fetch(`${API_URL}/admin/update-settings`, {
+                                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                                            body: JSON.stringify({ key: "reminder_hours", value: newHours })
+                                        });
+                                        document.getElementById("newReminderHour").value = "";
+                                    }} className="bg-black text-white px-4 rounded-lg font-bold hover:bg-gray-800">+</button>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {reminderHours.map((h, i) => (
+                                        <div key={i} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-lg font-bold text-sm flex items-center gap-2">
+                                            {h} Hours Before
+                                            <button onClick={async () => {
+                                                const newHours = reminderHours.filter((_, idx) => idx !== i);
+                                                setReminderHours(newHours);
+                                                await fetch(`${API_URL}/admin/update-settings`, {
+                                                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                    body: JSON.stringify({ key: "reminder_hours", value: newHours })
+                                                });
+                                            }} className="text-blue-400 hover:text-blue-600"><X size={14}/></button>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                                {factsList.map((fact, i) => (
-                                    <div key={i} className="flex justify-between items-start bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm font-medium text-gray-600">
-                                        <p>{fact}</p>
-                                        <button onClick={() => handleDeleteFact(i)} className="text-red-400 hover:text-red-600 ml-2"><X size={14}/></button>
-                                    </div>
-                                ))}
+
+                            {/* FACTS MANAGER */}
+                            <div>
+                                <h4 className="font-bold text-sm text-gray-500 uppercase mb-4">🧠 Manage Facts (Random Rotation)</h4>
+                                <div className="flex gap-2 mb-4">
+                                    <input value={newFact} onChange={e => setNewFact(e.target.value)} placeholder="Add a new sport fact..." className="flex-1 p-3 rounded-lg border border-gray-200 font-medium text-sm"/>
+                                    <button onClick={handleAddFact} className="bg-black text-white px-4 rounded-lg font-bold hover:bg-gray-800">+</button>
+                                </div>
+                                <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                                    {factsList.map((fact, i) => (
+                                        <div key={i} className="flex justify-between items-start bg-gray-50 p-3 rounded-lg border border-gray-100 text-xs font-medium text-gray-600">
+                                            <p>{fact}</p>
+                                            <button onClick={() => handleDeleteFact(i)} className="text-red-400 hover:text-red-600 ml-2"><X size={14}/></button>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
+
                         </div>
                     </div>
                 </div>
@@ -456,6 +499,7 @@ const Dashboard = () => {
             </div>
         )}
 
+        {/* ... (Rest of the tabs: PLAYERS, MANAGE, etc.) ... */}
         {activeTab === "PLAYERS" && (
             <div>
                 <h2 className="text-3xl font-black text-gray-800 mb-6">Player Management</h2>
