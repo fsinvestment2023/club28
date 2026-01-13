@@ -92,6 +92,7 @@ def extract_event_name(description):
         return part1.split(" (Match")[0].strip()
     
     if "PLACE PRIZE: " in desc_upper:
+        # Handle 1st/2nd/3rd Place Prize
         return description.split("Place Prize: ")[1].strip()
         
     return ""
@@ -188,12 +189,15 @@ def get_user_details(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: raise HTTPException(status_code=404, detail="User not found")
     
+    # 1. Confirmed Registrations
     regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
     reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
     
+    # 2. Pending Requests (where I am the Partner who needs to pay)
     pending = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Pending_Payment").all()
     pending_list = []
     for p in pending:
+        # Find the person who invited me (partner_id points to them)
         partner = db.query(models.User).filter(models.User.id == p.partner_id).first()
         tourney = db.query(models.Tournament).filter(models.Tournament.name == p.tournament_name, models.Tournament.city == p.city).first()
         
