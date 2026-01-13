@@ -9,7 +9,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons'; 
 import { useRouter, useFocusEffect } from 'expo-router';
 
-// --- IMPORT API_URL FROM CONFIG ---
 import { API_URL } from '../config';
 import RazorpayCheckout from '../components/RazorpayCheckout';
 
@@ -35,6 +34,7 @@ export default function App() {
   const [teamId, setTeamId] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
+  const [recoveredTeamId, setRecoveredTeamId] = useState(""); // For Forgot Password
 
   // Dashboard Data
   const [wallet, setWallet] = useState(0);
@@ -66,13 +66,11 @@ export default function App() {
 
   useEffect(() => { checkLoginStatus(); }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      if(isLoggedIn && teamId) {
+  useEffect(() => {
+    if(isLoggedIn && teamId) {
         fetchDashboardData(teamId);
-      }
-    }, [isLoggedIn, teamId, selectedRegIndex]) 
-  );
+    }
+  }, [selectedRegIndex, isLoggedIn, teamId]);
 
   const checkLoginStatus = async () => {
     try {
@@ -80,7 +78,6 @@ export default function App() {
       if (savedTeamId) {
         setTeamId(savedTeamId);
         setIsLoggedIn(true);
-        fetchDashboardData(savedTeamId);
       }
     } catch (error) { console.log(error); } 
     finally { setCheckingAuth(false); }
@@ -92,12 +89,14 @@ export default function App() {
       setUserData(userRes.data);
       setWallet(userRes.data.wallet_balance);
       setRegistrations(userRes.data.registrations || []);
-      
       setPendingRequests(userRes.data.pending_requests || []); 
 
+      let active = null;
       if (userRes.data.registrations?.length > 0) {
         const safeIndex = selectedRegIndex < userRes.data.registrations.length ? selectedRegIndex : 0;
-        const active = userRes.data.registrations[safeIndex]; 
+        if (selectedRegIndex >= userRes.data.registrations.length) setSelectedRegIndex(0);
+        
+        active = userRes.data.registrations[safeIndex];
         
         const stdRes = await axios.get(`${API_URL}/standings`, {
           params: { tournament: active.tournament, city: active.city, level: active.level }
@@ -112,13 +111,25 @@ export default function App() {
         );
         mine.sort((a: any, b: any) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
         setMyMatches(mine);
+      } else {
+          setStandings([]);
+          setMyMatches([]);
+          setTransactions([]); 
+          setNotifications([]);
       }
 
-      const notifRes = await axios.get(`${API_URL}/user/${tid}/notifications`);
-      setNotifications(notifRes.data);
+      if (active) {
+          setNotifications([]); 
+          setTransactions([]);
 
-      const txnRes = await axios.get(`${API_URL}/user/${tid}/transactions`);
-      setTransactions(txnRes.data);
+          const notifParams = { tournament: active.tournament, city: active.city };
+          const notifRes = await axios.get(`${API_URL}/user/${tid}/notifications`, { params: notifParams });
+          setNotifications(notifRes.data);
+
+          const txnParams = { tournament: active.tournament };
+          const txnRes = await axios.get(`${API_URL}/user/${tid}/transactions`, { params: txnParams });
+          setTransactions(txnRes.data);
+      }
 
     } catch (e) { console.log("Fetch Error", e); }
   };
@@ -166,32 +177,133 @@ export default function App() {
   };
 
   const onRefresh = async () => { setRefreshing(true); await fetchDashboardData(teamId); setRefreshing(false); };
-  const switchEvent = (index: number) => { setSelectedRegIndex(index); setShowDropdown(false); };
+  
+  const switchEvent = (index: number) => { 
+      setTransactions([]); 
+      setNotifications([]);
+      setSelectedRegIndex(index); 
+      setShowDropdown(false); 
+  };
+  
   const formatDateHeader = (dateStr: string) => { const parts = dateStr.split('-'); const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])); return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(); };
   const openScoreModal = (match: any) => { setSelectedMatch(match); setScoreInput(""); setModalVisible(true); };
   const submitScore = async () => { if(!scoreInput) return Alert.alert("Error", "Enter score"); setSubmittingScore(true); try { await axios.post(`${API_URL}/submit-score`, { match_id: selectedMatch.id, score: scoreInput, submitted_by_team: teamId }); setModalVisible(false); onRefresh(); Alert.alert("Sent", "Score sent for verification."); } catch(e) { Alert.alert("Error", "Failed to submit score."); } finally { setSubmittingScore(false); } };
   const verifyScore = async (matchId: number, action: string) => { try { await axios.post(`${API_URL}/verify-score`, { match_id: matchId, action: action }); onRefresh(); } catch(e) { Alert.alert("Error", "Action failed"); } };
+  
+  // --- AUTH HANDLERS ---
   const handleLogin = async () => { if (!teamId || !password) return Alert.alert("Error", "Enter Team ID & Password"); setLoading(true); try { const res = await axios.post(`${API_URL}/login`, { team_id: teamId.toUpperCase(), password }); if (res.data.status === "success") { await AsyncStorage.setItem("team_id", teamId.toUpperCase()); setIsLoggedIn(true); } } catch (error) { Alert.alert("Login Failed", "Invalid ID or Password"); } setLoading(false); };
   const handleRegister = async () => { if (!name || !password) return Alert.alert("Error", "Fill all fields"); setLoading(true); try { const res = await axios.post(`${API_URL}/register`, { phone, name, password }); Alert.alert("Success!", `Your Team ID is: ${res.data.user.team_id}`, [{ text: "OK", onPress: () => { setTeamId(res.data.user.team_id); setMode("LOGIN"); } }]); } catch (error) { Alert.alert("Error", "Registration failed."); } setLoading(false); };
   const sendOtp = async (nextMode: string) => { setMode(nextMode); };
   const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); setIsLoggedIn(false); setTeamId(""); setPassword(""); setUserData(null); };
 
+  // --- FORGOT PASSWORD HANDLERS ---
+  const handleCheckPhone = async () => {
+      if (!phone) return Alert.alert("Error", "Enter phone number");
+      setLoading(true);
+      try {
+          const res = await axios.post(`${API_URL}/check-phone`, { phone });
+          if (res.data.status === "exists") {
+              setRecoveredTeamId(res.data.team_id); // Save Team ID
+              setMode("FORGOT_OTP");
+          }
+      } catch (e) { Alert.alert("Error", "Phone number not found"); }
+      setLoading(false);
+  };
+
+  const handleVerifyForgotOtp = () => {
+      if (otp === "1234") {
+          setMode("FORGOT_FINAL");
+      } else {
+          Alert.alert("Error", "Invalid OTP");
+      }
+  };
+
+  const handleResetPassword = async () => {
+      if (!password) return Alert.alert("Error", "Enter new password");
+      setLoading(true);
+      try {
+          await axios.post(`${API_URL}/reset-password`, { phone, new_password: password });
+          Alert.alert("Success", "Password Updated! Please Login.");
+          setTeamId(recoveredTeamId); // Auto-fill ID
+          setMode("LOGIN");
+      } catch (e) { Alert.alert("Error", "Reset Failed"); }
+      setLoading(false);
+  };
+
   if (checkingAuth) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb"/></View>;
 
   if (!isLoggedIn) {
-    return (<KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor:'#2563eb'}}><SafeAreaView style={styles.loginContainer}><View style={{padding: 30, width:'100%', alignItems:'center'}}><Text style={styles.loginTitle}>RAKETA</Text><Text style={{color:'white', opacity:0.8, marginBottom: 40, fontWeight:'bold'}}>CLUB 28 ACCESS</Text>{mode === "LOGIN" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Player Login</Text><TextInput style={styles.input} placeholder="Team ID" value={teamId} onChangeText={setTeamId} autoCapitalize="characters" placeholderTextColor="#aaa"/><TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#aaa"/><TouchableOpacity style={styles.mainBtn} onPress={handleLogin} disabled={loading}>{loading ? <ActivityIndicator color="#2563eb"/> : <Text style={styles.btnText}>LOGIN</Text>}</TouchableOpacity><View style={styles.row}><TouchableOpacity onPress={() => setMode("REG_PHONE")}><Text style={styles.linkText}>Create Account</Text></TouchableOpacity><TouchableOpacity onPress={() => setMode("FORGOT_PHONE")}><Text style={styles.linkText}>Forgot?</Text></TouchableOpacity></View></View>)}{mode === "REG_PHONE" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Create Account</Text><TextInput style={styles.input} placeholder="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad"/><TouchableOpacity style={styles.mainBtn} onPress={() => sendOtp("REG_OTP")}><Text style={styles.btnText}>GET OTP</Text></TouchableOpacity><TouchableOpacity onPress={() => setMode("LOGIN")} style={{marginTop:15}}><Text style={styles.linkText}>Cancel</Text></TouchableOpacity></View>)}{mode === "REG_OTP" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Enter OTP</Text><TextInput style={styles.input} placeholder="1234" value={otp} onChangeText={setOtp} keyboardType="number-pad"/><TouchableOpacity style={styles.mainBtn} onPress={() => setMode("REG_FINAL")}><Text style={styles.btnText}>VERIFY</Text></TouchableOpacity></View>)}{mode === "REG_FINAL" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Finish</Text><TextInput style={styles.input} placeholder="Name" value={name} onChangeText={setName}/><TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry/><TouchableOpacity style={styles.mainBtn} onPress={handleRegister}><Text style={styles.btnText}>REGISTER</Text></TouchableOpacity></View>)}</View></SafeAreaView></KeyboardAvoidingView>);
+    return (
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor:'#2563eb'}}>
+            <SafeAreaView style={styles.loginContainer}>
+                <View style={{padding: 30, width:'100%', alignItems:'center'}}>
+                    <Text style={styles.loginTitle}>RAKETA</Text>
+                    <Text style={{color:'white', opacity:0.8, marginBottom: 40, fontWeight:'bold'}}>CLUB 28 ACCESS</Text>
+                    
+                    {/* LOGIN MODE */}
+                    {mode === "LOGIN" && (
+                        <View style={styles.glassCard}>
+                            <Text style={styles.cardTitle}>Player Login</Text>
+                            <TextInput style={styles.input} placeholder="Team ID" value={teamId} onChangeText={setTeamId} autoCapitalize="characters" placeholderTextColor="#aaa"/>
+                            <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#aaa"/>
+                            <TouchableOpacity style={styles.mainBtn} onPress={handleLogin} disabled={loading}>{loading ? <ActivityIndicator color="#2563eb"/> : <Text style={styles.btnText}>LOGIN</Text>}</TouchableOpacity>
+                            <View style={styles.row}>
+                                <TouchableOpacity onPress={() => setMode("REG_PHONE")}><Text style={styles.linkText}>Create Account</Text></TouchableOpacity>
+                                <TouchableOpacity onPress={() => setMode("FORGOT_PHONE")}><Text style={styles.linkText}>Forgot?</Text></TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* REGISTRATION FLOW */}
+                    {mode === "REG_PHONE" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Create Account</Text><TextInput style={styles.input} placeholder="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad"/><TouchableOpacity style={styles.mainBtn} onPress={() => sendOtp("REG_OTP")}><Text style={styles.btnText}>GET OTP</Text></TouchableOpacity><TouchableOpacity onPress={() => setMode("LOGIN")} style={{marginTop:15}}><Text style={styles.linkText}>Cancel</Text></TouchableOpacity></View>)}
+                    {mode === "REG_OTP" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Enter OTP</Text><TextInput style={styles.input} placeholder="1234" value={otp} onChangeText={setOtp} keyboardType="number-pad"/><TouchableOpacity style={styles.mainBtn} onPress={() => setMode("REG_FINAL")}><Text style={styles.btnText}>VERIFY</Text></TouchableOpacity></View>)}
+                    {mode === "REG_FINAL" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Finish</Text><TextInput style={styles.input} placeholder="Name" value={name} onChangeText={setName}/><TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry/><TouchableOpacity style={styles.mainBtn} onPress={handleRegister}><Text style={styles.btnText}>REGISTER</Text></TouchableOpacity></View>)}
+
+                    {/* FORGOT PASSWORD FLOW */}
+                    {mode === "FORGOT_PHONE" && (
+                        <View style={styles.glassCard}>
+                            <Text style={styles.cardTitle}>Forgot Password</Text>
+                            <TextInput style={styles.input} placeholder="Enter Phone Number" value={phone} onChangeText={setPhone} keyboardType="phone-pad"/>
+                            <TouchableOpacity style={styles.mainBtn} onPress={handleCheckPhone} disabled={loading}>
+                                {loading ? <ActivityIndicator color="white"/> : <Text style={styles.btnText}>GET OTP</Text>}
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setMode("LOGIN")} style={{marginTop:15}}><Text style={styles.linkText}>Back to Login</Text></TouchableOpacity>
+                        </View>
+                    )}
+                    {mode === "FORGOT_OTP" && (
+                        <View style={styles.glassCard}>
+                            <Text style={styles.cardTitle}>Verify OTP</Text>
+                            <TextInput style={styles.input} placeholder="Enter OTP (1234)" value={otp} onChangeText={setOtp} keyboardType="number-pad"/>
+                            <TouchableOpacity style={styles.mainBtn} onPress={handleVerifyForgotOtp}><Text style={styles.btnText}>VERIFY</Text></TouchableOpacity>
+                        </View>
+                    )}
+                    {mode === "FORGOT_FINAL" && (
+                        <View style={styles.glassCard}>
+                            <Text style={styles.cardTitle}>Reset Password</Text>
+                            <Text style={{textAlign:'center', marginBottom:15, color:'#666', fontWeight:'bold'}}>
+                                Resetting for Team ID: <Text style={{color:'#2563eb', fontSize:16}}>{recoveredTeamId}</Text>
+                            </Text>
+                            <TextInput style={styles.input} placeholder="New Password" value={password} onChangeText={setPassword} secureTextEntry/>
+                            <TouchableOpacity style={styles.mainBtn} onPress={handleResetPassword} disabled={loading}>
+                                {loading ? <ActivityIndicator color="white"/> : <Text style={styles.btnText}>RESET & LOGIN</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                </View>
+            </SafeAreaView>
+        </KeyboardAvoidingView>
+    );
   }
 
   const activeEvent = registrations.length > 0 ? registrations[selectedRegIndex] : null;
-  const currentEventName = activeEvent ? activeEvent.tournament : "";
-  const filteredNotifs = notifications.filter(n => { if (n.tab !== activeTab) return false; if (activeEvent) { const content = (n.title + n.message).toUpperCase(); const mentionsCurrent = content.includes(currentEventName.toUpperCase()); const isEventSpecificMsg = content.includes("WELCOME TO") || content.includes("REGISTRATION"); if (isEventSpecificMsg) { return mentionsCurrent; } return true; } return true; });
-  const eventPrizeTxns = transactions.filter(t => { if (t.mode !== 'PRIZE') return false; if (activeEvent) { return t.description.toUpperCase().includes(currentEventName.toUpperCase()); } return true; });
+  const eventPrizeTxns = activeEvent ? transactions.filter(t => t.mode === 'PRIZE') : [];
   const eventWinnings = eventPrizeTxns.reduce((sum, t) => sum + t.amount, 0);
+
   const myStats = standings.find(s => s.team_id === teamId);
   const myRank = myStats ? standings.findIndex(s => s.team_id === teamId) + 1 : "-";
   const filteredStandings = standings.filter(s => (s.group || "A") === groupTab);
   
-  // Type safe grouping
   const groupedMatches: Record<string, any[]> = {}; 
   myMatches.forEach(m => { if(!groupedMatches[m.date]) groupedMatches[m.date] = []; groupedMatches[m.date].push(m); });
 
@@ -240,7 +352,6 @@ export default function App() {
             <ActionCircle icon="search" label="Find Match" onPress={() => Alert.alert("Coming Soon")} />
         </View>
 
-        {/* --- PENDING REQUESTS CARD --- */}
         {pendingRequests.length > 0 && pendingRequests.map((req, i) => (
             <View key={i} style={styles.pendingCard}>
                 <Text style={styles.pendingTitle}>PENDING REQUESTS</Text>
@@ -273,16 +384,42 @@ export default function App() {
             <View style={styles.heroCard}><FontAwesome5 name="trophy" size={30} color="#ddd" style={{marginBottom:10}} /><Text style={styles.heroText}>Not registered for any active event.</Text><TouchableOpacity style={styles.heroBtn} onPress={() => router.push('/compete')}><Text style={styles.heroBtnText}>FIND A LEAGUE</Text></TouchableOpacity></View>
         )}
 
-        <View style={styles.updatesSection}><View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}><Feather name="bell" size={16} color="#2563eb" style={{marginRight:5}} /><Text style={styles.sectionTitle}>LATEST UPDATES</Text></View><View style={styles.updateCard}><View style={styles.tabRow}>{['PERSONAL', 'EVENT', 'COMMUNITY'].map(tab => (<TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={[styles.tabBtn, activeTab === tab && styles.activeTabBtn]}><Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text></TouchableOpacity>))}</View><View style={styles.divider} />{filteredNotifs.length > 0 ? filteredNotifs.map((n, i) => (<View key={i} style={styles.notifItem}><View style={{flex:1}}><Text style={styles.notifTitle}>{n.title}</Text><Text style={styles.notifMsg}>{n.message}</Text></View><Text style={styles.notifTime}>{n.sub_text}</Text></View>)) : <Text style={styles.emptyState}>NO NEW UPDATES</Text>}</View></View>
-        <View style={styles.updatesSection}><View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}><Feather name="trending-up" size={16} color="#10b981" style={{marginRight:5}} /><Text style={styles.sectionTitle}>EARNINGS TRACKER</Text></View><View style={styles.greenCard}><Text style={styles.earningsLabel}>{activeEvent ? activeEvent.tournament.toUpperCase() : "TOTAL"} WINNINGS</Text><Text style={styles.earningsValue}>₹{eventWinnings}</Text><FontAwesome5 name="trophy" size={80} color="white" style={styles.bgIcon} /></View><View style={{marginTop: 5}}>{eventPrizeTxns.length > 0 ? eventPrizeTxns.map((txn, i) => (<View key={i} style={styles.prizeTxnRow}><View><Text style={styles.prizeTxnTitle}>{txn.description}</Text><Text style={styles.prizeTxnDate}>{new Date(txn.date).toLocaleDateString()}</Text></View><Text style={styles.prizeTxnAmount}>+₹{txn.amount}</Text></View>)) : <Text style={{color:'#999', fontSize:10, textAlign:'center', marginTop:10}}>No winnings yet.</Text>}</View></View>
+        <View style={styles.updatesSection}><View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}><Feather name="bell" size={16} color="#2563eb" style={{marginRight:5}} /><Text style={styles.sectionTitle}>LATEST UPDATES</Text></View><View style={styles.updateCard}><View style={styles.tabRow}>{['PERSONAL', 'EVENT', 'COMMUNITY'].map(tab => (<TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={[styles.tabBtn, activeTab === tab && styles.activeTabBtn]}><Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text></TouchableOpacity>))}</View><View style={styles.divider} />{notifications.filter(n => n.tab === activeTab).length > 0 ? notifications.filter(n => n.tab === activeTab).map((n, i) => (<View key={i} style={styles.notifItem}><View style={{flex:1}}><Text style={styles.notifTitle}>{n.title}</Text><Text style={styles.notifMsg}>{n.message}</Text></View><Text style={styles.notifTime}>{n.sub_text}</Text></View>)) : <Text style={styles.emptyState}>NO NEW UPDATES</Text>}</View></View>
+        
+        <View style={styles.updatesSection}><View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}><Feather name="trending-up" size={16} color="#10b981" style={{marginRight:5}} /><Text style={styles.sectionTitle}>EARNINGS TRACKER</Text></View>
+            <View style={styles.greenCard}>
+                <Text style={styles.earningsLabel}>{activeEvent ? activeEvent.tournament.toUpperCase() : "EVENT"} WINNINGS</Text>
+                <Text style={styles.earningsValue}>₹{eventWinnings}</Text>
+                <FontAwesome5 name="trophy" size={80} color="white" style={styles.bgIcon} />
+            </View>
+            <View style={{marginTop: 5}}>
+                {eventPrizeTxns.length > 0 ? eventPrizeTxns.map((txn, i) => (
+                    <View key={i} style={styles.prizeTxnRow}>
+                        <View><Text style={styles.prizeTxnTitle}>{txn.description}</Text><Text style={styles.prizeTxnDate}>{new Date(txn.date).toLocaleDateString()}</Text></View>
+                        <Text style={styles.prizeTxnAmount}>+₹{txn.amount}</Text>
+                    </View>
+                )) : <Text style={{color:'#999', fontSize:10, textAlign:'center', marginTop:10}}>No winnings yet.</Text>}
+            </View>
+        </View>
       </ScrollView>
 
-      {/* RAZORPAY COMPONENT */}
       <RazorpayCheckout visible={payModal} onClose={() => setPayModal(false)} orderDetails={orderDetails} onSuccess={handlePaymentSuccess} />
 
-      {/* MODALS */}
       <Modal visible={showNotifModal} transparent animationType="fade"><View style={styles.modalBg}><View style={[styles.modalCard, {height:'60%'}]}><View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom:10}}><Text style={styles.modalTitle}>NOTIFICATIONS</Text><TouchableOpacity onPress={() => setShowNotifModal(false)}><Feather name="x" size={24} color="#333"/></TouchableOpacity></View><ScrollView style={{width:'100%'}}>{notifications.length > 0 ? notifications.map((n, i) => (<View key={i} style={[styles.notifItem, {borderBottomWidth:1, borderBottomColor:'#eee'}]}><View style={{flex:1}}><Text style={styles.notifTitle}>{n.title}</Text><Text style={styles.notifMsg}>{n.message}</Text></View><Text style={styles.notifTime}>{n.sub_text}</Text></View>)) : <Text style={{textAlign:'center', marginTop:50, color:'#999'}}>No notifications.</Text>}</ScrollView></View></View></Modal>
-      <Modal visible={modalVisible} transparent animationType="slide"><View style={styles.modalBg}><View style={styles.modalCard}><Text style={styles.modalTitle}>ENTER SCORE</Text><Text style={styles.modalSub}>{selectedMatch?.t1} vs {selectedMatch?.t2}</Text><TextInput style={styles.scoreInput} placeholder="e.g. 6-4, 6-2" value={scoreInput} onChangeText={setScoreInput} autoFocus/><View style={{flexDirection:'row', gap:10}}><TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}><Text style={{color:'#666', fontWeight:'bold'}}>CANCEL</Text></TouchableOpacity><TouchableOpacity style={styles.submitBtn} onPress={submitScore} disabled={submittingScore}>{submittingScore ? <ActivityIndicator color="white"/> : <Text style={{color:'white', fontWeight:'bold'}}>SUBMIT</Text>}</TouchableOpacity></View></View></View></Modal>
+      
+      <Modal visible={modalVisible} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBg}>
+            <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>ENTER SCORE</Text>
+                <Text style={styles.modalSub}>{selectedMatch?.t1} vs {selectedMatch?.t2}</Text>
+                <TextInput style={styles.scoreInput} placeholder="e.g. 6-4, 6-2" value={scoreInput} onChangeText={setScoreInput} autoFocus/>
+                <View style={{flexDirection:'row', gap:10}}>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}><Text style={{color:'#666', fontWeight:'bold'}}>CANCEL</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.submitBtn} onPress={submitScore} disabled={submittingScore}>{submittingScore ? <ActivityIndicator color="white"/> : <Text style={{color:'white', fontWeight:'bold'}}>SUBMIT</Text>}</TouchableOpacity>
+                </View>
+            </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <View style={styles.bottomNav}>
         <TouchableOpacity style={{alignItems:'center'}}><Feather name="home" size={24} color="#2563eb" /><Text style={[styles.navLabel, {color:'#2563eb'}]}>Home</Text></TouchableOpacity>
