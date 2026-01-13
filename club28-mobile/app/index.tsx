@@ -9,12 +9,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons'; 
 import { useRouter, useFocusEffect } from 'expo-router';
 
-// Make sure this path is correct for your project
+// --- IMPORT API_URL FROM CONFIG ---
+import { API_URL } from '../config';
 import RazorpayCheckout from '../components/RazorpayCheckout';
 
-const API_URL = "http://192.168.29.43:8000";
-
-const ActionCircle = ({ icon, label, onPress }) => (
+const ActionCircle = ({ icon, label, onPress }: any) => (
     <TouchableOpacity style={{alignItems:'center'}} onPress={onPress}>
         <View style={styles.circle}>
             <Feather name={icon} size={22} color="#2563eb" />
@@ -39,29 +38,29 @@ export default function App() {
 
   // Dashboard Data
   const [wallet, setWallet] = useState(0);
-  const [userData, setUserData] = useState(null);
-  const [registrations, setRegistrations] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]); 
-  const [notifications, setNotifications] = useState([]);
-  const [transactions, setTransactions] = useState([]);
+  const [userData, setUserData] = useState<any>(null);
+  const [registrations, setRegistrations] = useState<any[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]); 
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("PERSONAL");
 
   // Payment
   const [payModal, setPayModal] = useState(false);
   const [orderDetails, setOrderDetails] = useState(null);
-  const [requestToPay, setRequestToPay] = useState(null);
+  const [requestToPay, setRequestToPay] = useState<any>(null);
 
   // Event Selection & Matches
   const [selectedRegIndex, setSelectedRegIndex] = useState(0);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifModal, setShowNotifModal] = useState(false);
-  const [standings, setStandings] = useState([]);
-  const [myMatches, setMyMatches] = useState([]); 
+  const [standings, setStandings] = useState<any[]>([]);
+  const [myMatches, setMyMatches] = useState<any[]>([]); 
   const [eventTab, setEventTab] = useState("SCHEDULE"); 
   const [groupTab, setGroupTab] = useState("A");
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [selectedMatch, setSelectedMatch] = useState<any>(null);
   const [scoreInput, setScoreInput] = useState("");
   const [submittingScore, setSubmittingScore] = useState(false);
 
@@ -87,14 +86,13 @@ export default function App() {
     finally { setCheckingAuth(false); }
   };
 
-  const fetchDashboardData = async (tid) => {
+  const fetchDashboardData = async (tid: string) => {
     try {
       const userRes = await axios.get(`${API_URL}/user/${tid}`);
       setUserData(userRes.data);
       setWallet(userRes.data.wallet_balance);
       setRegistrations(userRes.data.registrations || []);
       
-      // Load pending requests for notifications
       setPendingRequests(userRes.data.pending_requests || []); 
 
       if (userRes.data.registrations?.length > 0) {
@@ -108,11 +106,11 @@ export default function App() {
 
         const scoreRes = await axios.get(`${API_URL}/scores`);
         const allMatches = scoreRes.data;
-        const mine = allMatches.filter(m => 
+        const mine = allMatches.filter((m: any) => 
           (m.t1.includes(tid) || m.t2.includes(tid)) && 
           m.category === active.tournament
         );
-        mine.sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+        mine.sort((a: any, b: any) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
         setMyMatches(mine);
       }
 
@@ -125,7 +123,7 @@ export default function App() {
     } catch (e) { console.log("Fetch Error", e); }
   };
 
-  const handlePayRequest = async (request) => {
+  const handlePayRequest = async (request: any) => {
       if (userData.wallet_balance < request.amount_due) {
           setRequestToPay(request);
           try {
@@ -138,24 +136,20 @@ export default function App() {
       }
   };
 
-  // --- THIS FUNCTION WAS FIXED ---
-  const confirmJoinRequest = async (request) => {
+  const confirmJoinRequest = async (request: any) => {
       try {
-          // We use /confirm-partner instead of /join-tournament
-          // This updates the PENDING entry to CONFIRMED
           await axios.post(`${API_URL}/confirm-partner`, {
-              reg_id: request.reg_id,  // The ID of the pending request
+              reg_id: request.reg_id,
               payment_mode: "WALLET"
           });
           Alert.alert("Success", "You have joined the team!");
           onRefresh();
-      } catch(e) { 
-          // Show the actual error message from backend
+      } catch(e: any) { 
           Alert.alert("Error", e.response?.data?.detail || "Could not join."); 
       }
   };
 
-  const handlePaymentSuccess = async (data) => {
+  const handlePaymentSuccess = async (data: any) => {
       setPayModal(false);
       try {
         await axios.post(`${API_URL}/razorpay/verify-payment`, {
@@ -163,7 +157,7 @@ export default function App() {
             razorpay_order_id: data.razorpay_order_id,
             razorpay_signature: data.razorpay_signature,
             team_id: userData.team_id,
-            amount: orderDetails.amount / 100 
+            amount: orderDetails ? (orderDetails as any).amount / 100 : 0
         });
         const userRes = await axios.get(`${API_URL}/user/${userData.team_id}`);
         setUserData(userRes.data);
@@ -172,14 +166,14 @@ export default function App() {
   };
 
   const onRefresh = async () => { setRefreshing(true); await fetchDashboardData(teamId); setRefreshing(false); };
-  const switchEvent = (index) => { setSelectedRegIndex(index); setShowDropdown(false); };
-  const formatDateHeader = (dateStr) => { const parts = dateStr.split('-'); const d = new Date(parts[0], parts[1] - 1, parts[2]); return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(); };
-  const openScoreModal = (match) => { setSelectedMatch(match); setScoreInput(""); setModalVisible(true); };
+  const switchEvent = (index: number) => { setSelectedRegIndex(index); setShowDropdown(false); };
+  const formatDateHeader = (dateStr: string) => { const parts = dateStr.split('-'); const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])); return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(); };
+  const openScoreModal = (match: any) => { setSelectedMatch(match); setScoreInput(""); setModalVisible(true); };
   const submitScore = async () => { if(!scoreInput) return Alert.alert("Error", "Enter score"); setSubmittingScore(true); try { await axios.post(`${API_URL}/submit-score`, { match_id: selectedMatch.id, score: scoreInput, submitted_by_team: teamId }); setModalVisible(false); onRefresh(); Alert.alert("Sent", "Score sent for verification."); } catch(e) { Alert.alert("Error", "Failed to submit score."); } finally { setSubmittingScore(false); } };
-  const verifyScore = async (matchId, action) => { try { await axios.post(`${API_URL}/verify-score`, { match_id: matchId, action: action }); onRefresh(); } catch(e) { Alert.alert("Error", "Action failed"); } };
+  const verifyScore = async (matchId: number, action: string) => { try { await axios.post(`${API_URL}/verify-score`, { match_id: matchId, action: action }); onRefresh(); } catch(e) { Alert.alert("Error", "Action failed"); } };
   const handleLogin = async () => { if (!teamId || !password) return Alert.alert("Error", "Enter Team ID & Password"); setLoading(true); try { const res = await axios.post(`${API_URL}/login`, { team_id: teamId.toUpperCase(), password }); if (res.data.status === "success") { await AsyncStorage.setItem("team_id", teamId.toUpperCase()); setIsLoggedIn(true); } } catch (error) { Alert.alert("Login Failed", "Invalid ID or Password"); } setLoading(false); };
   const handleRegister = async () => { if (!name || !password) return Alert.alert("Error", "Fill all fields"); setLoading(true); try { const res = await axios.post(`${API_URL}/register`, { phone, name, password }); Alert.alert("Success!", `Your Team ID is: ${res.data.user.team_id}`, [{ text: "OK", onPress: () => { setTeamId(res.data.user.team_id); setMode("LOGIN"); } }]); } catch (error) { Alert.alert("Error", "Registration failed."); } setLoading(false); };
-  const sendOtp = async (nextMode) => { setMode(nextMode); };
+  const sendOtp = async (nextMode: string) => { setMode(nextMode); };
   const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); setIsLoggedIn(false); setTeamId(""); setPassword(""); setUserData(null); };
 
   if (checkingAuth) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb"/></View>;
@@ -196,7 +190,10 @@ export default function App() {
   const myStats = standings.find(s => s.team_id === teamId);
   const myRank = myStats ? standings.findIndex(s => s.team_id === teamId) + 1 : "-";
   const filteredStandings = standings.filter(s => (s.group || "A") === groupTab);
-  const groupedMatches = {}; myMatches.forEach(m => { if(!groupedMatches[m.date]) groupedMatches[m.date] = []; groupedMatches[m.date].push(m); });
+  
+  // Type safe grouping
+  const groupedMatches: Record<string, any[]> = {}; 
+  myMatches.forEach(m => { if(!groupedMatches[m.date]) groupedMatches[m.date] = []; groupedMatches[m.date].push(m); });
 
   return (
     <View style={{flex:1, backgroundColor:'#F3F4F6'}}>

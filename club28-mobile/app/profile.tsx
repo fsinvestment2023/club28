@@ -10,17 +10,17 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+// --- IMPORT API_URL FROM CONFIG ---
+import { API_URL } from '../config';
 import RazorpayCheckout from '../components/RazorpayCheckout';
-
-const API_URL = "http://192.168.29.43:8000";
 
 export default function ProfileScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [userData, setUserData] = useState(null);
+  const [userData, setUserData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("INFO");
-  const [transactions, setTransactions] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
   
   // EDIT PROFILE STATE
   const [editing, setEditing] = useState(false);
@@ -99,7 +99,7 @@ export default function ProfileScreen() {
     }
   };
 
-  const handlePaymentSuccess = async (data) => {
+  const handlePaymentSuccess = async (data: any) => {
     setPayModal(false);
     try {
         const res = await axios.post(`${API_URL}/razorpay/verify-payment`, {
@@ -107,7 +107,7 @@ export default function ProfileScreen() {
             razorpay_order_id: data.razorpay_order_id,
             razorpay_signature: data.razorpay_signature,
             team_id: userData.team_id,
-            amount: orderDetails.amount / 100 
+            amount: orderDetails ? (orderDetails as any).amount / 100 : 0
         });
         Alert.alert("Success", `Wallet Updated! New Balance: ₹${res.data.new_balance}`);
         fetchProfileData(); 
@@ -132,8 +132,8 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); router.replace('/'); };
-  const handleDateChange = (event, selectedDate) => { setShowDatePicker(false); if (selectedDate) { const d = selectedDate; setFormData({ ...formData, dob: `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}` }); } };
-  const formatTextDate = (text) => { const cleaned = text.replace(/[^0-9]/g, ''); if (cleaned.length <= 2) return cleaned; if (cleaned.length <= 4) return `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`; return `${cleaned.slice(0, 2)}/${cleaned.slice(2, 4)}/${cleaned.slice(4, 8)}`; };
+  const handleDateChange = (event: any, selectedDate?: Date) => { setShowDatePicker(false); if (selectedDate) { const d = selectedDate; setFormData({ ...formData, dob: `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}` }); } };
+  const formatTextDate = (text: string) => { const cleaned = text.replace(/[^0-9]/g, ''); if (cleaned.length <= 2) return cleaned; if (cleaned.length <= 4) return `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`; return `${cleaned.slice(0, 2)}/${cleaned.slice(2, 4)}/${cleaned.slice(4, 8)}`; };
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb"/></View>;
 

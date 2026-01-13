@@ -5,7 +5,8 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import axios from 'axios';
 
-const API_URL = "http://192.168.29.43:8000";
+// --- IMPORT API_URL FROM CONFIG ---
+import { API_URL } from '../config';
 
 export default function CompeteScreen() {
   const router = useRouter();
@@ -30,8 +31,8 @@ export default function CompeteScreen() {
       setTournaments(data);
 
       if (data.length > 0) {
-        const allCities = [...new Set(data.map(t => t.city.trim().toUpperCase()))];
-        setCities(allCities);
+        const allCities = [...new Set(data.map((t: any) => t.city.trim().toUpperCase()))];
+        setCities(allCities as any);
         if (!allCities.includes(selectedCity) && allCities.length > 0) setSelectedCity(allCities[0]);
       }
     } catch (error) {
@@ -47,9 +48,9 @@ export default function CompeteScreen() {
     setRefreshing(false);
   };
 
-  const cityFiltered = tournaments.filter(t => t.city.trim().toUpperCase() === selectedCity);
-  const availableSports = ["All", ...new Set(cityFiltered.map(t => t.sport))];
-  const finalList = selectedSport === "All" ? cityFiltered : cityFiltered.filter(t => t.sport === selectedSport);
+  const cityFiltered = tournaments.filter((t: any) => t.city.trim().toUpperCase() === selectedCity);
+  const availableSports = ["All", ...new Set(cityFiltered.map((t: any) => t.sport))];
+  const finalList = selectedSport === "All" ? cityFiltered : cityFiltered.filter((t: any) => t.sport === selectedSport);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F3F4F6' }}>
@@ -80,7 +81,7 @@ export default function CompeteScreen() {
               </ScrollView>
 
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {availableSports.map(sport => (
+                {availableSports.map((sport: any) => (
                   <TouchableOpacity 
                     key={sport} 
                     onPress={() => setSelectedSport(sport)}
@@ -110,7 +111,7 @@ export default function CompeteScreen() {
         ) : finalList.length === 0 ? (
            <Text style={{textAlign:'center', color:'#9ca3af', marginTop:20}}>No events found.</Text>
         ) : (
-          finalList.map((t) => (
+          finalList.map((t: any) => (
             <TouchableOpacity 
                 key={t.id} 
                 style={styles.card} 

@@ -6,19 +6,18 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ✅ CORRECT IMPORT PATH FOR NESTED FOLDER (Two dots back)
+// --- IMPORT API_URL FROM CONFIG (Two levels back) ---
+import { API_URL } from '../../config';
 import RazorpayCheckout from '../../components/RazorpayCheckout';
-
-const API_URL = "http://192.168.29.43:8000";
 
 export default function RegistrationScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   
-  const [tournament, setTournament] = useState(null);
+  const [tournament, setTournament] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
-  const [selectedLevel, setSelectedLevel] = useState(null);
+  const [user, setUser] = useState<any>(null);
+  const [selectedLevel, setSelectedLevel] = useState<any>(null);
   const [partnerId, setPartnerId] = useState("");
   const [joining, setJoining] = useState(false);
 
@@ -36,7 +35,7 @@ export default function RegistrationScreen() {
         setUser(userRes.data);
       }
       const res = await axios.get(`${API_URL}/tournaments`);
-      const found = res.data.find(t => t.id.toString() === id);
+      const found = res.data.find((t: any) => t.id.toString() === id);
       setTournament(found);
       if (found && found.settings) {
         const cats = JSON.parse(found.settings);
@@ -86,14 +85,14 @@ export default function RegistrationScreen() {
       } else if (res.data.status === "joined") {
         Alert.alert("Success!", "Registration Complete!", [{ text: "OK", onPress: () => router.push('/') }]);
       }
-    } catch (error) {
+    } catch (error: any) {
       Alert.alert("Error", error.response?.data?.detail || "Join Failed");
     } finally {
       setJoining(false);
     }
   };
 
-  const initiateTopUp = async (amount) => {
+  const initiateTopUp = async (amount: number) => {
     try {
         const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: amount });
         setOrderDetails({
@@ -106,7 +105,7 @@ export default function RegistrationScreen() {
     } catch (e) { Alert.alert("Error", "Payment Init Failed"); }
   };
 
-  const handlePaymentSuccess = async (data) => {
+  const handlePaymentSuccess = async (data: any) => {
     setPayModal(false);
     try {
         await axios.post(`${API_URL}/razorpay/verify-payment`, {
@@ -114,7 +113,7 @@ export default function RegistrationScreen() {
             razorpay_order_id: data.razorpay_order_id,
             razorpay_signature: data.razorpay_signature,
             team_id: user.team_id,
-            amount: orderDetails.amount / 100 
+            amount: orderDetails ? (orderDetails as any).amount / 100 : 0
         });
         const userRes = await axios.get(`${API_URL}/user/${user.team_id}`);
         setUser(userRes.data);
@@ -149,7 +148,7 @@ export default function RegistrationScreen() {
       <ScrollView contentContainerStyle={{padding: 20, paddingBottom: 180}}>
         <View style={styles.card}>
             <Text style={styles.sectionTitle}>SELECT LEVEL</Text>
-            {categories.map((cat, idx) => (
+            {categories.map((cat: any, idx: number) => (
                 <TouchableOpacity key={idx} style={[styles.levelBtn, selectedLevel?.name === cat.name && styles.activeLevel]} onPress={() => setSelectedLevel(cat)}>
                     <View><Text style={[styles.levelTitle, selectedLevel?.name === cat.name && {color:'#2563eb'}]}>{cat.name}</Text><Text style={{fontSize:10, color:'#999'}}>Entry Fee</Text></View>
                     <Text style={[styles.price, selectedLevel?.name === cat.name && {color:'#2563eb'}]}>₹{cat.fee}</Text>
@@ -159,7 +158,7 @@ export default function RegistrationScreen() {
 
         <View style={styles.card}>
             <View style={{flexDirection:'row', alignItems:'center', marginBottom:15}}><Feather name="calendar" size={18} color="#2563eb" style={{marginRight:8}} /><Text style={styles.sectionTitle}>SCHEDULE & VENUE</Text></View>
-            {schedule.length > 0 ? (<View style={styles.scheduleBox}>{schedule.map((row, idx) => (<View key={idx} style={styles.scheduleRow}><Text style={styles.schLabel}>{row.label}</Text><Text style={styles.schValue}>{row.value}</Text></View>))}</View>) : (<Text style={{color:'#ccc', fontStyle:'italic', marginBottom:10}}>Schedule coming soon.</Text>)}
+            {schedule.length > 0 ? (<View style={styles.scheduleBox}>{schedule.map((row: any, idx: number) => (<View key={idx} style={styles.scheduleRow}><Text style={styles.schLabel}>{row.label}</Text><Text style={styles.schValue}>{row.value}</Text></View>))}</View>) : (<Text style={{color:'#ccc', fontStyle:'italic', marginBottom:10}}>Schedule coming soon.</Text>)}
             {tournament.venue && (<View style={{flexDirection:'row', marginTop: 10, alignItems:'center'}}><Feather name="map-pin" size={14} color="#666" style={{marginRight: 5}}/><Text style={{color:'#444', fontWeight:'bold'}}>{tournament.venue}</Text></View>)}
         </View>
 
