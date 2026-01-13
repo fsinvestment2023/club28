@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -16,9 +16,12 @@ class User(Base):
     gender = Column(String, default="")
     dob = Column(String, default="")
     play_location = Column(String, default="")
-    bank_details = Column(String, default="") # <--- NEW: SAVED BANK INFO
-    registration_date = Column(DateTime(timezone=True), server_default=func.now()) 
+    bank_details = Column(String, default="") 
     
+    # NEW: Store the address for push notifications
+    push_token = Column(String, default=None) 
+    
+    registration_date = Column(DateTime(timezone=True), server_default=func.now()) 
     registrations = relationship("Registration", back_populates="user", foreign_keys="Registration.user_id")
     transactions = relationship("Transaction", back_populates="user")
 
@@ -27,13 +30,12 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Integer)
-    type = Column(String) # "CREDIT" or "DEBIT"
-    mode = Column(String) # "WALLET_TOPUP", "EVENT_FEE", "DIRECT_PAYMENT", "PRIZE", "WITHDRAWAL"
+    type = Column(String) 
+    mode = Column(String) 
     description = Column(String)
     bank_details = Column(String, default="") 
-    status = Column(String, default="COMPLETED") # <--- NEW: PENDING / COMPLETED
+    status = Column(String, default="COMPLETED") 
     date = Column(DateTime(timezone=True), server_default=func.now())
-    
     user = relationship("User", back_populates="transactions")
 
 class Registration(Base):
@@ -65,10 +67,9 @@ class Tournament(Base):
     schedule = Column(String, default="[]")
     settings = Column(String, default="[]")
     draw_size = Column(Integer, default=16)
+    created_at = Column(DateTime(timezone=True), server_default=func.now()) # Used for "New Event" alerts
 
-    __table_args__ = (
-        UniqueConstraint('name', 'city', 'sport', name='_name_city_sport_uc'),
-    )
+    __table_args__ = (UniqueConstraint('name', 'city', 'sport', name='_name_city_sport_uc'),)
 
 class Match(Base):
     __tablename__ = "matches"
@@ -80,10 +81,14 @@ class Match(Base):
     t2 = Column(String)            
     score = Column(String, default=None)
     status = Column(String, default="Scheduled")
-    date = Column(String)
-    time = Column(String)
+    date = Column(String) # Format YYYY-MM-DD
+    time = Column(String) # Format HH:MM
     stage = Column(String, default="Group")
     submitted_by_team = Column(String, default=None)
+    
+    # NEW: Track if we sent reminders so we don't send duplicates
+    reminder_24h_sent = Column(Boolean, default=False)
+    reminder_2h_sent = Column(Boolean, default=False)
 
 class ClubInfo(Base):
     __tablename__ = "club_info"

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
   Alert, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, StatusBar, RefreshControl, Modal
@@ -8,9 +8,57 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons'; 
 import { useRouter, useFocusEffect } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 
+// --- IMPORT API_URL FROM CONFIG ---
 import { API_URL } from '../config';
 import RazorpayCheckout from '../components/RazorpayCheckout';
+
+// --- NOTIFICATION HANDLER CONFIG ---
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+// --- HELPER: REGISTER FOR PUSH NOTIFICATIONS ---
+async function registerForPushNotificationsAsync() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      return null;
+    }
+
+    try {
+        const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+        if (!projectId) return null; 
+        const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+        return token;
+    } catch (e) {
+        return null;
+    }
+  } else {
+    return null; 
+  }
+}
 
 const ActionCircle = ({ icon, label, onPress }: any) => (
     <TouchableOpacity style={{alignItems:'center'}} onPress={onPress}>
@@ -34,7 +82,7 @@ export default function App() {
   const [teamId, setTeamId] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
-  const [recoveredTeamId, setRecoveredTeamId] = useState(""); // For Forgot Password
+  const [recoveredTeamId, setRecoveredTeamId] = useState("");
 
   // Dashboard Data
   const [wallet, setWallet] = useState(0);
@@ -64,7 +112,38 @@ export default function App() {
   const [scoreInput, setScoreInput] = useState("");
   const [submittingScore, setSubmittingScore] = useState(false);
 
+  // Notification Listener Refs
+  const notificationListener = useRef<any>();
+  const responseListener = useRef<any>();
+
   useEffect(() => { checkLoginStatus(); }, []);
+
+  // --- AUTOMATIC TOKEN REGISTRATION ---
+  useEffect(() => {
+    if (isLoggedIn && teamId) {
+        registerForPushNotificationsAsync().then(token => {
+            if (token) {
+                axios.post(`${API_URL}/user/update-push-token`, {
+                    team_id: teamId,
+                    token: token
+                }).catch(err => console.log("Token update failed", err));
+            }
+        });
+
+        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+            fetchDashboardData(teamId);
+        });
+
+        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+            console.log("User tapped notification", response);
+        });
+
+        return () => {
+            notificationListener.current && notificationListener.current.remove();
+            responseListener.current && responseListener.current.remove();
+        };
+    }
+  }, [isLoggedIn, teamId]);
 
   useEffect(() => {
     if(isLoggedIn && teamId) {
@@ -95,7 +174,6 @@ export default function App() {
       if (userRes.data.registrations?.length > 0) {
         const safeIndex = selectedRegIndex < userRes.data.registrations.length ? selectedRegIndex : 0;
         if (selectedRegIndex >= userRes.data.registrations.length) setSelectedRegIndex(0);
-        
         active = userRes.data.registrations[safeIndex];
         
         const stdRes = await axios.get(`${API_URL}/standings`, {
@@ -106,8 +184,7 @@ export default function App() {
         const scoreRes = await axios.get(`${API_URL}/scores`);
         const allMatches = scoreRes.data;
         const mine = allMatches.filter((m: any) => 
-          (m.t1.includes(tid) || m.t2.includes(tid)) && 
-          m.category === active.tournament
+          (m.t1.includes(tid) || m.t2.includes(tid)) && m.category === active.tournament
         );
         mine.sort((a: any, b: any) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
         setMyMatches(mine);
@@ -121,175 +198,50 @@ export default function App() {
       if (active) {
           setNotifications([]); 
           setTransactions([]);
-
           const notifParams = { tournament: active.tournament, city: active.city };
           const notifRes = await axios.get(`${API_URL}/user/${tid}/notifications`, { params: notifParams });
           setNotifications(notifRes.data);
-
           const txnParams = { tournament: active.tournament };
           const txnRes = await axios.get(`${API_URL}/user/${tid}/transactions`, { params: txnParams });
           setTransactions(txnRes.data);
       }
-
     } catch (e) { console.log("Fetch Error", e); }
   };
 
-  const handlePayRequest = async (request: any) => {
-      if (userData.wallet_balance < request.amount_due) {
-          setRequestToPay(request);
-          try {
-            const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: request.amount_due - userData.wallet_balance });
-            setOrderDetails({ ...res.data, description: "Join Request Fee", contact: userData.phone, email: userData.email });
-            setPayModal(true);
-          } catch(e) { Alert.alert("Error", "Payment Init Failed"); }
-      } else {
-          confirmJoinRequest(request);
-      }
-  };
-
-  const confirmJoinRequest = async (request: any) => {
-      try {
-          await axios.post(`${API_URL}/confirm-partner`, {
-              reg_id: request.reg_id,
-              payment_mode: "WALLET"
-          });
-          Alert.alert("Success", "You have joined the team!");
-          onRefresh();
-      } catch(e: any) { 
-          Alert.alert("Error", e.response?.data?.detail || "Could not join."); 
-      }
-  };
-
-  const handlePaymentSuccess = async (data: any) => {
-      setPayModal(false);
-      try {
-        await axios.post(`${API_URL}/razorpay/verify-payment`, {
-            razorpay_payment_id: data.razorpay_payment_id,
-            razorpay_order_id: data.razorpay_order_id,
-            razorpay_signature: data.razorpay_signature,
-            team_id: userData.team_id,
-            amount: orderDetails ? (orderDetails as any).amount / 100 : 0
-        });
-        const userRes = await axios.get(`${API_URL}/user/${userData.team_id}`);
-        setUserData(userRes.data);
-        if(requestToPay) confirmJoinRequest(requestToPay);
-      } catch(e) { Alert.alert("Error", "Verification Failed"); }
-  };
-
+  const handlePayRequest = async (request: any) => { if (userData.wallet_balance < request.amount_due) { setRequestToPay(request); try { const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: request.amount_due - userData.wallet_balance }); setOrderDetails({ ...res.data, description: "Join Request Fee", contact: userData.phone, email: userData.email }); setPayModal(true); } catch(e) { Alert.alert("Error", "Payment Init Failed"); } } else { confirmJoinRequest(request); } };
+  const confirmJoinRequest = async (request: any) => { try { await axios.post(`${API_URL}/confirm-partner`, { reg_id: request.reg_id, payment_mode: "WALLET" }); Alert.alert("Success", "You have joined the team!"); onRefresh(); } catch(e: any) { Alert.alert("Error", e.response?.data?.detail || "Could not join."); } };
+  const handlePaymentSuccess = async (data: any) => { setPayModal(false); try { await axios.post(`${API_URL}/razorpay/verify-payment`, { razorpay_payment_id: data.razorpay_payment_id, razorpay_order_id: data.razorpay_order_id, razorpay_signature: data.razorpay_signature, team_id: userData.team_id, amount: orderDetails ? (orderDetails as any).amount / 100 : 0 }); const userRes = await axios.get(`${API_URL}/user/${userData.team_id}`); setUserData(userRes.data); if(requestToPay) confirmJoinRequest(requestToPay); } catch(e) { Alert.alert("Error", "Verification Failed"); } };
   const onRefresh = async () => { setRefreshing(true); await fetchDashboardData(teamId); setRefreshing(false); };
-  
-  const switchEvent = (index: number) => { 
-      setTransactions([]); 
-      setNotifications([]);
-      setSelectedRegIndex(index); 
-      setShowDropdown(false); 
-  };
-  
+  const switchEvent = (index: number) => { setTransactions([]); setNotifications([]); setSelectedRegIndex(index); setShowDropdown(false); };
   const formatDateHeader = (dateStr: string) => { const parts = dateStr.split('-'); const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])); return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(); };
   const openScoreModal = (match: any) => { setSelectedMatch(match); setScoreInput(""); setModalVisible(true); };
   const submitScore = async () => { if(!scoreInput) return Alert.alert("Error", "Enter score"); setSubmittingScore(true); try { await axios.post(`${API_URL}/submit-score`, { match_id: selectedMatch.id, score: scoreInput, submitted_by_team: teamId }); setModalVisible(false); onRefresh(); Alert.alert("Sent", "Score sent for verification."); } catch(e) { Alert.alert("Error", "Failed to submit score."); } finally { setSubmittingScore(false); } };
   const verifyScore = async (matchId: number, action: string) => { try { await axios.post(`${API_URL}/verify-score`, { match_id: matchId, action: action }); onRefresh(); } catch(e) { Alert.alert("Error", "Action failed"); } };
-  
-  // --- AUTH HANDLERS ---
   const handleLogin = async () => { if (!teamId || !password) return Alert.alert("Error", "Enter Team ID & Password"); setLoading(true); try { const res = await axios.post(`${API_URL}/login`, { team_id: teamId.toUpperCase(), password }); if (res.data.status === "success") { await AsyncStorage.setItem("team_id", teamId.toUpperCase()); setIsLoggedIn(true); } } catch (error) { Alert.alert("Login Failed", "Invalid ID or Password"); } setLoading(false); };
   const handleRegister = async () => { if (!name || !password) return Alert.alert("Error", "Fill all fields"); setLoading(true); try { const res = await axios.post(`${API_URL}/register`, { phone, name, password }); Alert.alert("Success!", `Your Team ID is: ${res.data.user.team_id}`, [{ text: "OK", onPress: () => { setTeamId(res.data.user.team_id); setMode("LOGIN"); } }]); } catch (error) { Alert.alert("Error", "Registration failed."); } setLoading(false); };
   const sendOtp = async (nextMode: string) => { setMode(nextMode); };
   const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); setIsLoggedIn(false); setTeamId(""); setPassword(""); setUserData(null); };
-
-  // --- FORGOT PASSWORD HANDLERS ---
-  const handleCheckPhone = async () => {
-      if (!phone) return Alert.alert("Error", "Enter phone number");
-      setLoading(true);
-      try {
-          const res = await axios.post(`${API_URL}/check-phone`, { phone });
-          if (res.data.status === "exists") {
-              setRecoveredTeamId(res.data.team_id); // Save Team ID
-              setMode("FORGOT_OTP");
-          }
-      } catch (e) { Alert.alert("Error", "Phone number not found"); }
-      setLoading(false);
-  };
-
-  const handleVerifyForgotOtp = () => {
-      if (otp === "1234") {
-          setMode("FORGOT_FINAL");
-      } else {
-          Alert.alert("Error", "Invalid OTP");
-      }
-  };
-
-  const handleResetPassword = async () => {
-      if (!password) return Alert.alert("Error", "Enter new password");
-      setLoading(true);
-      try {
-          await axios.post(`${API_URL}/reset-password`, { phone, new_password: password });
-          Alert.alert("Success", "Password Updated! Please Login.");
-          setTeamId(recoveredTeamId); // Auto-fill ID
-          setMode("LOGIN");
-      } catch (e) { Alert.alert("Error", "Reset Failed"); }
-      setLoading(false);
-  };
+  const handleCheckPhone = async () => { if (!phone) return Alert.alert("Error", "Enter phone number"); setLoading(true); try { const res = await axios.post(`${API_URL}/check-phone`, { phone }); if (res.data.status === "exists") { setRecoveredTeamId(res.data.team_id); setMode("FORGOT_OTP"); } } catch (e) { Alert.alert("Error", "Phone number not found"); } setLoading(false); };
+  const handleVerifyForgotOtp = () => { if (otp === "1234") { setMode("FORGOT_FINAL"); } else { Alert.alert("Error", "Invalid OTP"); } };
+  const handleResetPassword = async () => { if (!password) return Alert.alert("Error", "Enter new password"); setLoading(true); try { await axios.post(`${API_URL}/reset-password`, { phone, new_password: password }); Alert.alert("Success", "Password Updated! Please Login."); setTeamId(recoveredTeamId); setMode("LOGIN"); } catch (e) { Alert.alert("Error", "Reset Failed"); } setLoading(false); };
 
   if (checkingAuth) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb"/></View>;
 
   if (!isLoggedIn) {
+    // ... (Login/Register/Forgot UI - same as before) ...
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor:'#2563eb'}}>
             <SafeAreaView style={styles.loginContainer}>
                 <View style={{padding: 30, width:'100%', alignItems:'center'}}>
                     <Text style={styles.loginTitle}>RAKETA</Text>
                     <Text style={{color:'white', opacity:0.8, marginBottom: 40, fontWeight:'bold'}}>CLUB 28 ACCESS</Text>
-                    
-                    {/* LOGIN MODE */}
-                    {mode === "LOGIN" && (
-                        <View style={styles.glassCard}>
-                            <Text style={styles.cardTitle}>Player Login</Text>
-                            <TextInput style={styles.input} placeholder="Team ID" value={teamId} onChangeText={setTeamId} autoCapitalize="characters" placeholderTextColor="#aaa"/>
-                            <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#aaa"/>
-                            <TouchableOpacity style={styles.mainBtn} onPress={handleLogin} disabled={loading}>{loading ? <ActivityIndicator color="#2563eb"/> : <Text style={styles.btnText}>LOGIN</Text>}</TouchableOpacity>
-                            <View style={styles.row}>
-                                <TouchableOpacity onPress={() => setMode("REG_PHONE")}><Text style={styles.linkText}>Create Account</Text></TouchableOpacity>
-                                <TouchableOpacity onPress={() => setMode("FORGOT_PHONE")}><Text style={styles.linkText}>Forgot?</Text></TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
-
-                    {/* REGISTRATION FLOW */}
+                    {mode === "LOGIN" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Player Login</Text><TextInput style={styles.input} placeholder="Team ID" value={teamId} onChangeText={setTeamId} autoCapitalize="characters" placeholderTextColor="#aaa"/><TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#aaa"/><TouchableOpacity style={styles.mainBtn} onPress={handleLogin} disabled={loading}>{loading ? <ActivityIndicator color="#2563eb"/> : <Text style={styles.btnText}>LOGIN</Text>}</TouchableOpacity><View style={styles.row}><TouchableOpacity onPress={() => setMode("REG_PHONE")}><Text style={styles.linkText}>Create Account</Text></TouchableOpacity><TouchableOpacity onPress={() => setMode("FORGOT_PHONE")}><Text style={styles.linkText}>Forgot?</Text></TouchableOpacity></View></View>)}
                     {mode === "REG_PHONE" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Create Account</Text><TextInput style={styles.input} placeholder="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad"/><TouchableOpacity style={styles.mainBtn} onPress={() => sendOtp("REG_OTP")}><Text style={styles.btnText}>GET OTP</Text></TouchableOpacity><TouchableOpacity onPress={() => setMode("LOGIN")} style={{marginTop:15}}><Text style={styles.linkText}>Cancel</Text></TouchableOpacity></View>)}
                     {mode === "REG_OTP" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Enter OTP</Text><TextInput style={styles.input} placeholder="1234" value={otp} onChangeText={setOtp} keyboardType="number-pad"/><TouchableOpacity style={styles.mainBtn} onPress={() => setMode("REG_FINAL")}><Text style={styles.btnText}>VERIFY</Text></TouchableOpacity></View>)}
                     {mode === "REG_FINAL" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Finish</Text><TextInput style={styles.input} placeholder="Name" value={name} onChangeText={setName}/><TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry/><TouchableOpacity style={styles.mainBtn} onPress={handleRegister}><Text style={styles.btnText}>REGISTER</Text></TouchableOpacity></View>)}
-
-                    {/* FORGOT PASSWORD FLOW */}
-                    {mode === "FORGOT_PHONE" && (
-                        <View style={styles.glassCard}>
-                            <Text style={styles.cardTitle}>Forgot Password</Text>
-                            <TextInput style={styles.input} placeholder="Enter Phone Number" value={phone} onChangeText={setPhone} keyboardType="phone-pad"/>
-                            <TouchableOpacity style={styles.mainBtn} onPress={handleCheckPhone} disabled={loading}>
-                                {loading ? <ActivityIndicator color="white"/> : <Text style={styles.btnText}>GET OTP</Text>}
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setMode("LOGIN")} style={{marginTop:15}}><Text style={styles.linkText}>Back to Login</Text></TouchableOpacity>
-                        </View>
-                    )}
-                    {mode === "FORGOT_OTP" && (
-                        <View style={styles.glassCard}>
-                            <Text style={styles.cardTitle}>Verify OTP</Text>
-                            <TextInput style={styles.input} placeholder="Enter OTP (1234)" value={otp} onChangeText={setOtp} keyboardType="number-pad"/>
-                            <TouchableOpacity style={styles.mainBtn} onPress={handleVerifyForgotOtp}><Text style={styles.btnText}>VERIFY</Text></TouchableOpacity>
-                        </View>
-                    )}
-                    {mode === "FORGOT_FINAL" && (
-                        <View style={styles.glassCard}>
-                            <Text style={styles.cardTitle}>Reset Password</Text>
-                            <Text style={{textAlign:'center', marginBottom:15, color:'#666', fontWeight:'bold'}}>
-                                Resetting for Team ID: <Text style={{color:'#2563eb', fontSize:16}}>{recoveredTeamId}</Text>
-                            </Text>
-                            <TextInput style={styles.input} placeholder="New Password" value={password} onChangeText={setPassword} secureTextEntry/>
-                            <TouchableOpacity style={styles.mainBtn} onPress={handleResetPassword} disabled={loading}>
-                                {loading ? <ActivityIndicator color="white"/> : <Text style={styles.btnText}>RESET & LOGIN</Text>}
-                            </TouchableOpacity>
-                        </View>
-                    )}
-
+                    {mode === "FORGOT_PHONE" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Forgot Password</Text><TextInput style={styles.input} placeholder="Enter Phone Number" value={phone} onChangeText={setPhone} keyboardType="phone-pad"/><TouchableOpacity style={styles.mainBtn} onPress={handleCheckPhone} disabled={loading}>{loading ? <ActivityIndicator color="white"/> : <Text style={styles.btnText}>GET OTP</Text>}</TouchableOpacity><TouchableOpacity onPress={() => setMode("LOGIN")} style={{marginTop:15}}><Text style={styles.linkText}>Back to Login</Text></TouchableOpacity></View>)}
+                    {mode === "FORGOT_OTP" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Verify OTP</Text><TextInput style={styles.input} placeholder="Enter OTP (1234)" value={otp} onChangeText={setOtp} keyboardType="number-pad"/><TouchableOpacity style={styles.mainBtn} onPress={handleVerifyForgotOtp}><Text style={styles.btnText}>VERIFY</Text></TouchableOpacity></View>)}
+                    {mode === "FORGOT_FINAL" && (<View style={styles.glassCard}><Text style={styles.cardTitle}>Reset Password</Text><Text style={{textAlign:'center', marginBottom:15, color:'#666', fontWeight:'bold'}}>Resetting for Team ID: <Text style={{color:'#2563eb', fontSize:16}}>{recoveredTeamId}</Text></Text><TextInput style={styles.input} placeholder="New Password" value={password} onChangeText={setPassword} secureTextEntry/><TouchableOpacity style={styles.mainBtn} onPress={handleResetPassword} disabled={loading}>{loading ? <ActivityIndicator color="white"/> : <Text style={styles.btnText}>RESET & LOGIN</Text>}</TouchableOpacity></View>)}
                 </View>
             </SafeAreaView>
         </KeyboardAvoidingView>
@@ -299,11 +251,9 @@ export default function App() {
   const activeEvent = registrations.length > 0 ? registrations[selectedRegIndex] : null;
   const eventPrizeTxns = activeEvent ? transactions.filter(t => t.mode === 'PRIZE') : [];
   const eventWinnings = eventPrizeTxns.reduce((sum, t) => sum + t.amount, 0);
-
   const myStats = standings.find(s => s.team_id === teamId);
   const myRank = myStats ? standings.findIndex(s => s.team_id === teamId) + 1 : "-";
   const filteredStandings = standings.filter(s => (s.group || "A") === groupTab);
-  
   const groupedMatches: Record<string, any[]> = {}; 
   myMatches.forEach(m => { if(!groupedMatches[m.date]) groupedMatches[m.date] = []; groupedMatches[m.date].push(m); });
 
@@ -316,10 +266,9 @@ export default function App() {
             <View style={styles.headerTopRow}>
                 <Text style={styles.headerLogo}>RAKETA</Text>
                 <View style={styles.headerIcons}>
-                    <Feather name="search" size={20} color="white" style={{marginRight:15}} />
-                    <TouchableOpacity style={{position:'relative'}} onPress={() => setShowNotifModal(true)}>
-                        <Feather name="bell" size={20} color="white" />
-                        {notifications.length > 0 && <View style={styles.badge} />}
+                    <TouchableOpacity style={{marginRight: 15}} onPress={() => setShowNotifModal(true)}>
+                         <Feather name="bell" size={20} color="white" />
+                         {notifications.length > 0 && <View style={styles.badge} />}
                     </TouchableOpacity>
                 </View>
             </View>
@@ -407,6 +356,7 @@ export default function App() {
 
       <Modal visible={showNotifModal} transparent animationType="fade"><View style={styles.modalBg}><View style={[styles.modalCard, {height:'60%'}]}><View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom:10}}><Text style={styles.modalTitle}>NOTIFICATIONS</Text><TouchableOpacity onPress={() => setShowNotifModal(false)}><Feather name="x" size={24} color="#333"/></TouchableOpacity></View><ScrollView style={{width:'100%'}}>{notifications.length > 0 ? notifications.map((n, i) => (<View key={i} style={[styles.notifItem, {borderBottomWidth:1, borderBottomColor:'#eee'}]}><View style={{flex:1}}><Text style={styles.notifTitle}>{n.title}</Text><Text style={styles.notifMsg}>{n.message}</Text></View><Text style={styles.notifTime}>{n.sub_text}</Text></View>)) : <Text style={{textAlign:'center', marginTop:50, color:'#999'}}>No notifications.</Text>}</ScrollView></View></View></Modal>
       
+      {/* KEYBOARD FIX */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBg}>
             <View style={styles.modalCard}>

@@ -9,10 +9,50 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 
 // --- IMPORT API_URL FROM CONFIG ---
 import { API_URL } from '../config';
 import RazorpayCheckout from '../components/RazorpayCheckout';
+
+// --- HELPER: REGISTER TOKEN ---
+async function registerForPushNotificationsAsync() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      Alert.alert("Permission Missing", "Enable notifications in settings.");
+      return null;
+    }
+
+    try {
+        const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+        if (!projectId) return null;
+        const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+        return token;
+    } catch (e) {
+        return null;
+    }
+  } else {
+    Alert.alert("Error", "Must use physical device");
+    return null;
+  }
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -32,7 +72,7 @@ export default function ProfileScreen() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [bankDetails, setBankDetails] = useState({ bank: "", acc: "", ifsc: "" });
 
-  // ADD MONEY STATE (New)
+  // ADD MONEY STATE
   const [addMoneyModal, setAddMoneyModal] = useState(false);
   const [addAmount, setAddAmount] = useState("");
 
@@ -66,54 +106,45 @@ export default function ProfileScreen() {
     finally { setLoading(false); }
   };
 
-  // 1. OPEN ADD MONEY MODAL
+  // --- MANUAL ENABLE NOTIFICATIONS FUNCTION ---
+  const handleEnableNotifications = async () => {
+      const token = await registerForPushNotificationsAsync();
+      if (token && userData?.team_id) {
+          try {
+              await axios.post(`${API_URL}/user/update-push-token`, {
+                  team_id: userData.team_id,
+                  token: token
+              });
+              Alert.alert("Success", "Notifications Enabled! 🔔");
+          } catch (e) {
+              Alert.alert("Error", "Could not save settings.");
+          }
+      }
+  };
+
   const openAddMoney = () => {
       setAddAmount("");
       setAddMoneyModal(true);
   };
 
-  // 2. PROCEED TO PAYMENT (After entering amount)
   const initiateAddMoneyPayment = async () => {
     const amount = parseInt(addAmount);
-    if (!amount || amount <= 0) {
-        Alert.alert("Invalid Amount", "Please enter a valid amount.");
-        return;
-    }
-    setAddMoneyModal(false); // Close input modal
-
+    if (!amount || amount <= 0) { Alert.alert("Invalid Amount", "Please enter a valid amount."); return; }
+    setAddMoneyModal(false); 
     try {
         const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: amount }); 
-        
-        // FIX: Map key_id to key for the frontend component
-        setOrderDetails({
-            ...res.data, 
-            key: res.data.key_id, // <--- CRITICAL FIX FOR RAZORPAY ERROR
-            description: "Wallet Recharge",
-            contact: userData.phone,
-            email: userData.email || "player@example.com",
-            amount: res.data.amount || (amount * 100) // Ensure amount is passed correctly
-        });
-        setPayModal(true); // Open Razorpay
-    } catch (e) {
-        Alert.alert("Error", "Could not create payment order. Is Backend running?");
-    }
+        setOrderDetails({ ...res.data, key: res.data.key_id, description: "Wallet Recharge", contact: userData.phone, email: userData.email, amount: res.data.amount });
+        setPayModal(true); 
+    } catch (e) { Alert.alert("Error", "Could not create payment order."); }
   };
 
   const handlePaymentSuccess = async (data: any) => {
     setPayModal(false);
     try {
-        const res = await axios.post(`${API_URL}/razorpay/verify-payment`, {
-            razorpay_payment_id: data.razorpay_payment_id,
-            razorpay_order_id: data.razorpay_order_id,
-            razorpay_signature: data.razorpay_signature,
-            team_id: userData.team_id,
-            amount: orderDetails ? (orderDetails as any).amount / 100 : 0
-        });
+        const res = await axios.post(`${API_URL}/razorpay/verify-payment`, { razorpay_payment_id: data.razorpay_payment_id, razorpay_order_id: data.razorpay_order_id, razorpay_signature: data.razorpay_signature, team_id: userData.team_id, amount: orderDetails ? (orderDetails as any).amount / 100 : 0 });
         Alert.alert("Success", `Wallet Updated! New Balance: ₹${res.data.new_balance}`);
         fetchProfileData(); 
-    } catch (e) {
-        Alert.alert("Failed", "Payment verification failed");
-    }
+    } catch (e) { Alert.alert("Failed", "Payment verification failed"); }
   };
 
   const handleSaveProfile = async () => { try { await axios.post(`${API_URL}/user/update-profile`, { team_id: userData.team_id, ...formData }); Alert.alert("Success", "Profile Updated!"); setEditing(false); fetchProfileData(); } catch (e) { Alert.alert("Error", "Update failed"); } };
@@ -126,9 +157,7 @@ export default function ProfileScreen() {
           setWithdrawModal(false); 
           Alert.alert("Success", "Request Sent!"); 
           fetchProfileData(); 
-      } catch (e) { 
-          Alert.alert("Error", "Withdrawal Failed. Check Balance."); 
-      } 
+      } catch (e) { Alert.alert("Error", "Withdrawal Failed. Check Balance."); } 
   };
 
   const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); router.replace('/'); };
@@ -178,6 +207,13 @@ export default function ProfileScreen() {
                 <View style={styles.inputGroup}><Text style={styles.label}>Gender</Text><TextInput style={[styles.input, editing && styles.inputEditable]} value={formData.gender} onChangeText={t => setFormData({...formData, gender: t})} editable={editing} placeholder="Male / Female"/></View>
                 <View style={styles.inputGroup}><Text style={styles.label}>Date of Birth</Text><View style={{flexDirection:'row', alignItems:'center'}}><TextInput style={[styles.input, styles.dateInput, editing && styles.inputEditable]} value={formData.dob} onChangeText={t => setFormData({...formData, dob: formatTextDate(t)})} editable={editing} placeholder="DD / MM / YYYY" keyboardType="numeric" maxLength={10}/>{editing && (<TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.calendarBtn}><Feather name="calendar" size={22} color="#2563eb" /></TouchableOpacity>)}</View>{showDatePicker && (<DateTimePicker value={new Date()} mode="date" display="default" onChange={handleDateChange} maximumDate={new Date()}/>)}</View>
                 <View style={styles.inputGroup}><Text style={styles.label}>Play Location</Text><TextInput style={[styles.input, editing && styles.inputEditable]} value={formData.play_location} onChangeText={t => setFormData({...formData, play_location: t})} editable={editing} placeholder="City / Club"/></View>
+
+                {/* NEW: Enable Notifications Button in Info Tab */}
+                <TouchableOpacity style={styles.notifBtn} onPress={handleEnableNotifications}>
+                    <Feather name="bell" size={16} color="#2563eb" style={{marginRight:8}}/>
+                    <Text style={{color:'#2563eb', fontWeight:'bold', fontSize:12}}>Enable Push Notifications</Text>
+                </TouchableOpacity>
+
             </View>
         )}
 
@@ -207,41 +243,22 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
 
-      {/* RAZORPAY COMPONENT */}
-      <RazorpayCheckout 
-        visible={payModal} 
-        onClose={() => setPayModal(false)} 
-        orderDetails={orderDetails} 
-        onSuccess={handlePaymentSuccess} 
-      />
+      <RazorpayCheckout visible={payModal} onClose={() => setPayModal(false)} orderDetails={orderDetails} onSuccess={handlePaymentSuccess} />
 
-      {/* ADD MONEY MODAL */}
       <Modal visible={addMoneyModal} transparent animationType="slide">
         <View style={styles.modalBg}>
             <View style={styles.modalCard}>
                 <Text style={styles.modalTitle}>ADD MONEY</Text>
                 <Text style={{color:'#666', marginBottom:15}}>Enter amount to add to wallet</Text>
-                <TextInput 
-                    style={styles.modalInput} 
-                    placeholder="Amount (₹)" 
-                    keyboardType="number-pad" 
-                    value={addAmount} 
-                    onChangeText={setAddAmount}
-                    autoFocus
-                />
+                <TextInput style={styles.modalInput} placeholder="Amount (₹)" keyboardType="number-pad" value={addAmount} onChangeText={setAddAmount} autoFocus/>
                 <View style={{flexDirection:'row', gap:10, marginTop:10}}>
-                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setAddMoneyModal(false)}>
-                        <Text style={{fontWeight:'bold', color:'#666'}}>CANCEL</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.submitBtn} onPress={initiateAddMoneyPayment}>
-                        <Text style={{fontWeight:'bold', color:'white'}}>PROCEED</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setAddMoneyModal(false)}><Text style={{fontWeight:'bold', color:'#666'}}>CANCEL</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.submitBtn} onPress={initiateAddMoneyPayment}><Text style={{fontWeight:'bold', color:'white'}}>PROCEED</Text></TouchableOpacity>
                 </View>
             </View>
         </View>
       </Modal>
 
-      {/* WITHDRAW MODAL */}
       <Modal visible={withdrawModal} transparent animationType="slide">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBg}>
             <View style={styles.modalCard}>
@@ -252,12 +269,8 @@ export default function ProfileScreen() {
                 <TextInput style={styles.modalInput} placeholder="Account Number" keyboardType="number-pad" value={bankDetails.acc} onChangeText={t=>setBankDetails({...bankDetails, acc:t})} />
                 <TextInput style={styles.modalInput} placeholder="IFSC Code" value={bankDetails.ifsc} onChangeText={t=>setBankDetails({...bankDetails, ifsc:t})} />
                 <View style={{flexDirection:'row', gap:10, marginTop:10}}>
-                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModal(false)}>
-                        <Text style={{fontWeight:'bold', color:'#666'}}>CANCEL</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.submitBtn} onPress={handleWithdraw}>
-                        <Text style={{fontWeight:'bold', color:'white'}}>CONFIRM</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModal(false)}><Text style={{fontWeight:'bold', color:'#666'}}>CANCEL</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.submitBtn} onPress={handleWithdraw}><Text style={{fontWeight:'bold', color:'white'}}>CONFIRM</Text></TouchableOpacity>
                 </View>
             </View>
         </KeyboardAvoidingView>
@@ -316,5 +329,8 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: '#2563eb', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 10, flex:1, alignItems:'center' },
   cancelBtn: { paddingHorizontal: 20, paddingVertical: 12, flex:1, alignItems:'center' },
   bottomNav: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: 'white', paddingVertical: 15, borderTopWidth: 1, borderTopColor: '#f3f4f6', position:'absolute', bottom:0, width:'100%' },
-  navLabel: { fontSize: 10, fontWeight: 'bold', color: '#9ca3af', marginTop: 4 }
+  navLabel: { fontSize: 10, fontWeight: 'bold', color: '#9ca3af', marginTop: 4 },
+  
+  // New style for Notification button in Profile
+  notifBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 15, padding: 10, backgroundColor: '#eff6ff', borderRadius: 10 }
 });
