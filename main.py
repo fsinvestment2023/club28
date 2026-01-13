@@ -77,6 +77,25 @@ def get_next_group(db: Session, tournament_name: str, city: str, category: str, 
     if not allowed_groups: allowed_groups = ['A']
     return allowed_groups[total_count % len(allowed_groups)], "OK"
 
+# --- NEW HELPER: STRICT EVENT NAME EXTRACTION ---
+def extract_event_name(description):
+    # Extracts the exact event name from transaction descriptions
+    # Formats: "Fee: EVENTNAME", "Match Win: EVENTNAME (Match #1)", "1st Place Prize: EVENTNAME"
+    desc_upper = description.upper()
+    
+    if "FEE: " in desc_upper:
+        return description.split("Fee: ")[1].strip()
+    
+    if "MATCH WIN: " in desc_upper:
+        # Split by "Match Win: " then take part before " (Match"
+        part1 = description.split("Match Win: ")[1]
+        return part1.split(" (Match")[0].strip()
+    
+    if "PLACE PRIZE: " in desc_upper:
+        return description.split("Place Prize: ")[1].strip()
+        
+    return ""
+
 # --- SCHEMAS ---
 class OTPRequest(BaseModel): phone: str
 class RegisterRequest(BaseModel): phone: str; name: str; password: str
@@ -164,21 +183,17 @@ def get_all_transactions(db: Session = Depends(get_db)):
         })
     return txns
 
-# --- UPDATED: FETCH PENDING REQUESTS IN USER PROFILE ---
 @app.get("/user/{team_id}")
 def get_user_details(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: raise HTTPException(status_code=404, detail="User not found")
     
-    # 1. Confirmed Registrations
     regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
     reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
     
-    # 2. Pending Requests (where I am the Partner who needs to pay)
     pending = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Pending_Payment").all()
     pending_list = []
     for p in pending:
-        # Find the person who invited me (partner_id points to them)
         partner = db.query(models.User).filter(models.User.id == p.partner_id).first()
         tourney = db.query(models.Tournament).filter(models.Tournament.name == p.tournament_name, models.Tournament.city == p.city).first()
         
@@ -206,7 +221,7 @@ def get_user_details(team_id: str, db: Session = Depends(get_db)):
         "wallet_balance": user.wallet_balance, "email": user.email, "gender": user.gender, "dob": user.dob, 
         "play_location": user.play_location, "bank_details": user.bank_details,
         "registrations": reg_data,
-        "pending_requests": pending_list # <--- CRITICAL FIX: Sending pending requests to frontend
+        "pending_requests": pending_list
     }
 
 @app.get("/admin/players")
@@ -272,21 +287,25 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
     if not user: return []
     final_feed = []
     
-    # 1. PERSONAL
+    # 1. PERSONAL (Strict Exact Match)
     txns_query = db.query(models.Transaction).filter(models.Transaction.user_id == user.id, models.Transaction.mode == "EVENT_FEE").order_by(models.Transaction.date.desc()).limit(10).all()
     for t in txns_query:
         if "(ARCHIVED)" in t.description: continue
         
-        tourney_name = t.description.replace("Fee: ", "").strip()
-        if tournament and (tournament.upper() not in tourney_name.upper()): continue
-        exists = db.query(models.Tournament).filter(models.Tournament.name == tourney_name).first()
+        extracted_name = extract_event_name(t.description)
+        
+        # STRICT CHECK: Extracted name must MATCH the requested tournament exactly
+        if tournament and (extracted_name.upper() != tournament.upper()): continue
+        
+        # Ensure tournament still exists
+        exists = db.query(models.Tournament).filter(models.Tournament.name == extracted_name).first()
         if not exists: continue 
         
-        final_feed.append({ "id": f"welcome_{t.id}", "tab": "PERSONAL", "title": "Registration Successful", "message": f"Welcome to {tourney_name}!", "sub_text": t.date.strftime("%d %b"), "time": t.date.strftime("%I:%M %p"), "sort_key": t.date.timestamp() })
+        final_feed.append({ "id": f"welcome_{t.id}", "tab": "PERSONAL", "title": "Registration Successful", "message": f"Welcome to {extracted_name}!", "sub_text": t.date.strftime("%d %b"), "time": t.date.strftime("%I:%M %p"), "sort_key": t.date.timestamp() })
 
     # 2. MATCHES
     match_query = db.query(models.Match).filter((models.Match.t1.contains(team_id) | models.Match.t2.contains(team_id)), models.Match.status == "Scheduled")
-    if tournament: match_query = match_query.filter(models.Match.category == tournament)
+    if tournament: match_query = match_query.filter(models.Match.category == tournament) # DB already exact matches columns
     if city: match_query = match_query.filter(models.Match.city == city)
     matches = match_query.all()
     for m in matches:
@@ -295,7 +314,7 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
     
     # 3. RESULTS
     event_match_query = db.query(models.Match).filter(models.Match.status == "Official")
-    if tournament: event_match_query = event_match_query.filter(models.Match.category == tournament)
+    if tournament: event_match_query = event_match_query.filter(models.Match.category == tournament) # DB exact match
     if city: event_match_query = event_match_query.filter(models.Match.city == city)
     finished_matches = event_match_query.order_by(models.Match.id.desc()).limit(10).all()
     for m in finished_matches:
@@ -352,7 +371,6 @@ def get_user_history(team_id: str, db: Session = Depends(get_db)):
 
 @app.get("/admin/tournament-players")
 def get_tournament_players(name: str, city: str, db: Session = Depends(get_db)):
-    # 1. Fetch BOTH Confirmed and Partial_Confirmed
     results = db.query(models.Registration).filter(
         models.Registration.tournament_name == name,
         models.Registration.city == city,
@@ -548,6 +566,7 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
     standings.sort(key=lambda x: x['points'], reverse=True)
     return standings
 
+# --- UPDATED: STRICT TRANSACTION FILTERING ---
 @app.get("/user/{team_id}/transactions")
 def get_user_transactions(team_id: str, tournament: str = None, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
@@ -558,7 +577,10 @@ def get_user_transactions(team_id: str, tournament: str = None, db: Session = De
         filtered_txns = []
         for t in all_txns:
             if "(ARCHIVED)" in t.description: continue
-            if tournament.upper() in t.description.upper(): 
+            
+            extracted_name = extract_event_name(t.description)
+            # STRICT CHECK: Extracted name must MATCH the requested tournament exactly
+            if tournament.upper() == extracted_name.upper(): 
                 filtered_txns.append(t)
         return filtered_txns
     return all_txns
@@ -583,17 +605,23 @@ def admin_edit_tournament(data: TournamentUpdate, db: Session = Depends(get_db))
         db.commit()
     return {"message": "Updated"}
 
+# --- UPDATED: STRICT ARCHIVING ---
 @app.post("/admin/delete-tournament")
 def delete_tournament(data: TournamentDelete, db: Session = Depends(get_db)):
     t = db.query(models.Tournament).filter(models.Tournament.id == data.id).first()
     if t:
-        txns = db.query(models.Transaction).filter(
-            models.Transaction.description.contains(t.name),
+        # STRICT ARCHIVE: Only archive if EXTRACTED name matches exactly
+        candidates = db.query(models.Transaction).filter(
+            models.Transaction.description.contains(t.name), # Broad fetch for speed
             models.Transaction.mode.in_(['EVENT_FEE', 'PRIZE'])
         ).all()
-        for txn in txns:
-            if "(ARCHIVED)" not in txn.description:
-                txn.description = f"{txn.description} (ARCHIVED)"
+        
+        for txn in candidates:
+            # Check exact match before archiving
+            extracted_name = extract_event_name(txn.description)
+            if extracted_name.upper() == t.name.upper():
+                if "(ARCHIVED)" not in txn.description:
+                    txn.description = f"{txn.description} (ARCHIVED)"
         
         db.query(models.Match).filter(models.Match.category == t.name, models.Match.city == t.city).delete()
         db.query(models.Registration).filter(models.Registration.tournament_name == t.name, models.Registration.city == t.city).delete()
