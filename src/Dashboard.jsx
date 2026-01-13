@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter, FileText, Info, Edit, Settings, CheckCircle } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter, FileText, Info, Edit, Settings, CheckCircle, Bell, Send } from 'lucide-react';
 
 const Dashboard = () => {
   // --- STATE ---
@@ -51,6 +51,20 @@ const Dashboard = () => {
   const [newMatchStage, setNewMatchStage] = useState("Group Stage"); 
 
   const [ourAimContent, setOurAimContent] = useState("");
+
+  // Notification State
+  const [notifTitle, setNotifTitle] = useState("");
+  const [notifBody, setNotifBody] = useState("");
+  const [newFact, setNewFact] = useState("");
+  // Simulating fetched facts since they are currently hardcoded in main.py
+  // In a real production version, you would fetch these from an API endpoint
+  const [factsList, setFactsList] = useState([
+    "🎾 Did you know? Padel was invented in Mexico in 1969!",
+    "🚀 Pickleball is the fastest growing sport in the USA!",
+    "🎾 The longest tennis match lasted 11 hours and 5 minutes.",
+    "🌍 Padel is played by over 25 million people across 90 countries.",
+    "🏆 Wimbledon uses 54,250 tennis balls during the tournament."
+  ]);
 
   const API_URL = "http://127.0.0.1:8000"; 
 
@@ -110,6 +124,33 @@ const Dashboard = () => {
           body: JSON.stringify({ section: "OUR_AIM", content: ourAimContent }) 
       });
       alert("Content Updated!");
+  };
+
+  const handleSendTestNotification = async () => {
+      if(!notifTitle || !notifBody) return alert("Enter Title and Body");
+      // This uses the create-notification endpoint which we updated to send push
+      await fetch(`${API_URL}/admin/create-notification`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ type: "COMMUNITY", title: notifTitle, message: notifBody })
+      });
+      alert("Notification Sent to All Users!");
+      setNotifTitle("");
+      setNotifBody("");
+  };
+
+  const handleAddFact = () => {
+      if(!newFact) return;
+      setFactsList([...factsList, newFact]);
+      setNewFact("");
+      // In real implementation: API call to save fact to DB
+  };
+
+  const handleDeleteFact = (index) => {
+      const newFacts = [...factsList];
+      newFacts.splice(index, 1);
+      setFactsList(newFacts);
+      // In real implementation: API call to delete fact
   };
 
   // --- NEW: CONFIRM PAYMENT ---
@@ -371,12 +412,47 @@ const Dashboard = () => {
         {activeTab === "CONTENT" && (
             <div>
                 <h2 className="text-3xl font-black text-gray-800 mb-6">App Content (CMS)</h2>
-                <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 max-w-4xl">
+                
+                {/* --- OUR MISSION SECTION --- */}
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 max-w-4xl mb-8">
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Edit size={20}/> Edit "Our Mission"</h3>
                     <p className="text-sm text-gray-400 mb-4">This text will appear on the Login screen and User Profile.</p>
-                    <textarea value={ourAimContent} onChange={(e) => setOurAimContent(e.target.value)} className="w-full h-64 p-4 border border-gray-200 rounded-xl font-medium text-gray-700 text-sm leading-relaxed mb-6 focus:border-blue-500 outline-none" placeholder="Write your mission statement here..."/>
+                    <textarea value={ourAimContent} onChange={(e) => setOurAimContent(e.target.value)} className="w-full h-32 p-4 border border-gray-200 rounded-xl font-medium text-gray-700 text-sm leading-relaxed mb-6 focus:border-blue-500 outline-none" placeholder="Write your mission statement here..."/>
                     <button onClick={handleUpdateContent} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-wide hover:bg-gray-800">Save Content</button>
                 </div>
+
+                {/* --- NEW: NOTIFICATION CONTROL PANEL --- */}
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 max-w-4xl">
+                    <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Bell size={20}/> Notification Control</h3>
+                    
+                    <div className="grid grid-cols-2 gap-8">
+                        {/* MANUAL PUSH */}
+                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
+                            <h4 className="font-bold text-sm text-gray-500 uppercase mb-4">📢 Send Instant Alert</h4>
+                            <input value={notifTitle} onChange={e => setNotifTitle(e.target.value)} placeholder="Title (e.g. Rain Delay)" className="w-full p-3 mb-2 rounded-lg border border-gray-200 font-bold text-sm"/>
+                            <textarea value={notifBody} onChange={e => setNotifBody(e.target.value)} placeholder="Message (e.g. All matches delayed by 1 hour)" className="w-full p-3 mb-4 rounded-lg border border-gray-200 font-medium text-sm h-24 resize-none"/>
+                            <button onClick={handleSendTestNotification} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><Send size={16}/> Send Now</button>
+                        </div>
+
+                        {/* FACTS MANAGER */}
+                        <div>
+                            <h4 className="font-bold text-sm text-gray-500 uppercase mb-4">🧠 Manage Facts (Random Rotation)</h4>
+                            <div className="flex gap-2 mb-4">
+                                <input value={newFact} onChange={e => setNewFact(e.target.value)} placeholder="Add a new sport fact..." className="flex-1 p-3 rounded-lg border border-gray-200 font-medium text-sm"/>
+                                <button onClick={handleAddFact} className="bg-black text-white px-4 rounded-lg font-bold hover:bg-gray-800">+</button>
+                            </div>
+                            <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                {factsList.map((fact, i) => (
+                                    <div key={i} className="flex justify-between items-start bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm font-medium text-gray-600">
+                                        <p>{fact}</p>
+                                        <button onClick={() => handleDeleteFact(i)} className="text-red-400 hover:text-red-600 ml-2"><X size={14}/></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         )}
 
