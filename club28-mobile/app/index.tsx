@@ -184,7 +184,7 @@ export default function App() {
         const scoreRes = await axios.get(`${API_URL}/scores`);
         const allMatches = scoreRes.data;
         const mine = allMatches.filter((m: any) => 
-          (m.t1.includes(tid) || m.t2.includes(tid)) && m.category === active.tournament
+          (m.t1.includes(tid) || m.t2.includes(tid)) && m.category === active.tournament && m.city === active.city
         );
         mine.sort((a: any, b: any) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
         setMyMatches(mine);
@@ -201,7 +201,7 @@ export default function App() {
           const notifParams = { tournament: active.tournament, city: active.city };
           const notifRes = await axios.get(`${API_URL}/user/${tid}/notifications`, { params: notifParams });
           setNotifications(notifRes.data);
-          const txnParams = { tournament: active.tournament };
+          const txnParams = { tournament: active.tournament, city: active.city };
           const txnRes = await axios.get(`${API_URL}/user/${tid}/transactions`, { params: txnParams });
           setTransactions(txnRes.data);
       }
@@ -279,7 +279,7 @@ export default function App() {
                     <Text style={styles.userId}>{teamId}</Text>
                 </View>
                 <TouchableOpacity onPress={() => setShowDropdown(!showDropdown)} style={styles.eventDropdownBtn}>
-                    <Text style={styles.eventDropdownText} numberOfLines={1}>{activeEvent ? activeEvent.tournament.toUpperCase() : "MY EVENTS"}</Text>
+                    <Text style={styles.eventDropdownText} numberOfLines={1}>{activeEvent ? `${activeEvent.tournament.toUpperCase()} (${activeEvent.city})` : "MY EVENTS"}</Text>
                     <Feather name="chevron-down" size={14} color="white" />
                 </TouchableOpacity>
             </View>
@@ -338,7 +338,10 @@ export default function App() {
         <View style={styles.updatesSection}><View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}><Feather name="trending-up" size={16} color="#10b981" style={{marginRight:5}} /><Text style={styles.sectionTitle}>EARNINGS TRACKER</Text></View>
             <View style={styles.greenCard}>
                 <Text style={styles.earningsLabel}>{activeEvent ? activeEvent.tournament.toUpperCase() : "EVENT"} WINNINGS</Text>
-                <Text style={styles.earningsValue}>₹{eventWinnings}</Text>
+                
+                {/* --- FIXED TEXT OVERFLOW HERE --- */}
+                <Text style={styles.earningsValue} numberOfLines={1} adjustsFontSizeToFit>₹{eventWinnings}</Text>
+                
                 <FontAwesome5 name="trophy" size={80} color="white" style={styles.bgIcon} />
             </View>
             <View style={{marginTop: 5}}>
@@ -477,7 +480,7 @@ const styles = StyleSheet.create({
   notifTime: { fontSize:9, fontWeight:'bold', color:'#9ca3af' },
   greenCard: { backgroundColor: '#10b981', borderRadius: 20, padding: 25, marginTop: 5, position: 'relative', overflow: 'hidden' },
   earningsLabel: { color: 'white', fontSize: 10, fontWeight: 'bold', opacity: 0.9 },
-  earningsValue: { color: 'white', fontSize: 32, fontWeight: '900', marginTop: 5 },
+  earningsValue: { color: 'white', fontSize: 32, fontWeight: '900', marginTop: 5 }, // Font size reduced slightly
   bgIcon: { position: 'absolute', right: -10, bottom: -15, opacity: 0.2 },
   prizeTxnRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 15, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
   prizeTxnTitle: { fontSize: 12, fontWeight: '900', color: '#333' },

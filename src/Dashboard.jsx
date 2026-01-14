@@ -70,27 +70,37 @@ const Dashboard = () => {
   // --- HANDLERS ---
   const handleLogin = () => { if (password === "admin123") { setIsAuthenticated(true); fetchTournaments(); } else { alert("Wrong Password"); } };
   
-  const fetchTournaments = async () => { try { const res = await fetch(`${API_URL}/tournaments`); setTournaments(await res.json()); } catch (e) {} };
+  const fetchTournaments = async () => { 
+      try { 
+          const res = await fetch(`${API_URL}/tournaments`); 
+          const data = await res.json();
+          if(Array.isArray(data)) setTournaments(data);
+          else setTournaments([]);
+      } catch (e) { setTournaments([]); } 
+  };
   
   const fetchMatches = async () => { 
       try { 
           const res = await fetch(`${API_URL}/scores`); 
           const data = await res.json(); 
-          const filtered = selectedTournament ? data.filter(m => m.category === selectedTournament.name && m.city === selectedTournament.city) : data; 
-          setMatches(filtered.sort((a,b) => a.id - b.id)); 
-      } catch(e) {} 
+          if(Array.isArray(data)){
+              const filtered = selectedTournament ? data.filter(m => m.category === selectedTournament.name && m.city === selectedTournament.city) : data; 
+              setMatches(filtered.sort((a,b) => a.id - b.id)); 
+          } else { setMatches([]); }
+      } catch(e) { setMatches([]); } 
   };
   
-  const fetchPlayers = async () => { try { const res = await fetch(`${API_URL}/admin/players`); setPlayers(await res.json()); } catch(e){} };
+  const fetchPlayers = async () => { try { const res = await fetch(`${API_URL}/admin/players`); const data = await res.json(); setPlayers(Array.isArray(data) ? data : []); } catch(e){ setPlayers([]); } };
   
-  const fetchTransactions = async () => { try { const res = await fetch(`${API_URL}/admin/transactions`); setTransactions(await res.json()); } catch(e){} };
+  const fetchTransactions = async () => { try { const res = await fetch(`${API_URL}/admin/transactions`); const data = await res.json(); setTransactions(Array.isArray(data) ? data : []); } catch(e){ setTransactions([]); } };
   
   const fetchTournamentPlayers = async () => { 
       if(!selectedTournament) return; 
       try { 
           const res = await fetch(`${API_URL}/admin/tournament-players?name=${selectedTournament.name}&city=${selectedTournament.city}`); 
-          setTournamentPlayers(await res.json()); 
-      } catch(e){} 
+          const data = await res.json();
+          setTournamentPlayers(Array.isArray(data) ? data : []); 
+      } catch(e){ setTournamentPlayers([]); } 
   };
 
   const fetchLeaderboard = async () => {
@@ -104,8 +114,9 @@ const Dashboard = () => {
       if(!selectedTournament || !levelToFetch) return;
       try {
           const res = await fetch(`${API_URL}/admin/leaderboard?tournament=${selectedTournament.name}&city=${selectedTournament.city}&level=${levelToFetch}`);
-          setLeaderboard(await res.json());
-      } catch(e) {}
+          const data = await res.json();
+          setLeaderboard(Array.isArray(data) ? data : []);
+      } catch(e) { setLeaderboard([]); }
   };
 
   const fetchAppContent = async () => {
@@ -169,7 +180,8 @@ const Dashboard = () => {
       try {
           const res = await fetch(`${API_URL}/user/${player.team_id}/transactions`);
           if (res.ok) {
-              setPlayerHistory(await res.json());
+              const data = await res.json();
+              setPlayerHistory(Array.isArray(data) ? data : []);
           }
       } catch(e) { console.error(e); }
   };
@@ -203,8 +215,8 @@ const Dashboard = () => {
 
   useEffect(() => { if (selectedTournament && !activeLevelTab) { try { const cats = JSON.parse(selectedTournament.settings || "[]"); if (cats.length > 0) setActiveLevelTab(cats[0].name); } catch(e) {} } }, [selectedTournament]);
 
-  const filteredPlayers = tournamentPlayers.filter(p => p.active_level === activeLevelTab);
-  const filteredLeaderboard = leaderboard.filter(p => leaderboardGroup === "ALL" || p.group === leaderboardGroup);
+  const filteredPlayers = Array.isArray(tournamentPlayers) ? tournamentPlayers.filter(p => p.active_level === activeLevelTab) : [];
+  const filteredLeaderboard = Array.isArray(leaderboard) ? leaderboard.filter(p => leaderboardGroup === "ALL" || p.group === leaderboardGroup) : [];
   
   const handleAddMoney = async () => { if (!walletTeamId || !walletAmount) return alert("Fill fields"); const res = await fetch(`${API_URL}/admin/add-wallet`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ team_id: walletTeamId, amount: parseInt(walletAmount) }) }); if (res.ok) { alert("Money Added!"); setWalletTeamId(""); setWalletAmount(""); fetchPlayers(); } else { alert("Player Not Found"); } };
   const handleDeleteTournament = async (id) => { if(!window.confirm("Delete this event?")) return; await fetch(`${API_URL}/admin/delete-tournament`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) }); fetchTournaments(); if(selectedTournament?.id === id) setSelectedTournament(null); };
@@ -303,7 +315,7 @@ const Dashboard = () => {
                       <button onClick={() => setIsHistoryOpen(false)}><X size={20}/></button>
                   </div>
                   <div className="p-4 overflow-y-auto">
-                      {playerHistory.length > 0 ? (
+                      {Array.isArray(playerHistory) && playerHistory.length > 0 ? (
                           <div className="space-y-2">
                               {playerHistory.map(t => (
                                   <div key={t.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
@@ -335,7 +347,7 @@ const Dashboard = () => {
             <button onClick={() => {setActiveTab("ACCOUNTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "ACCOUNTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Accounts</button>
             <button onClick={() => {setActiveTab("CONTENT"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "CONTENT" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Content (CMS)</button>
             <div className="px-4 py-2 text-xs font-bold text-gray-400 uppercase mt-4">Active Events</div>
-            {tournaments.map(t => ( <button key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className={`w-full text-left px-4 py-2 rounded-lg font-medium text-sm ${selectedTournament?.id === t.id ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{t.name}</button> ))}
+            {Array.isArray(tournaments) && tournaments.map(t => ( <button key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className={`w-full text-left px-4 py-2 rounded-lg font-medium text-sm ${selectedTournament?.id === t.id ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{t.name}</button> ))}
             <button onClick={openCreateModal} className="w-full mt-4 border border-dashed border-gray-300 p-2 rounded-lg text-xs font-bold text-gray-400 hover:text-blue-600 hover:border-blue-600">+ Create New Event</button>
         </div>
       </div>
@@ -343,7 +355,7 @@ const Dashboard = () => {
       <div className="flex-1 overflow-y-auto p-8 h-screen">
         {activeTab === "TOURNAMENTS" && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {tournaments.map(t => (
+                {Array.isArray(tournaments) && tournaments.map(t => (
                     <div key={t.id} onClick={() => {setSelectedTournament(t); setActiveTab("MANAGE");}} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-pointer relative group flex flex-col justify-between">
                         <div>
                             <div className="flex justify-between items-start mb-4"><span className="bg-blue-100 text-blue-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.type}</span><span className="bg-purple-100 text-purple-600 text-[10px] font-black px-2 py-1 rounded uppercase">{t.format || "Singles"}</span></div>
@@ -366,7 +378,7 @@ const Dashboard = () => {
                     <tr><th className="p-4">Date</th><th className="p-4">Player</th><th className="p-4">Description</th><th className="p-4">Bank Details</th><th className="p-4 text-right">Income</th><th className="p-4 text-right">Expense</th><th className="p-4 text-center">Status</th></tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {transactions.map(t => {
+                    {Array.isArray(transactions) && transactions.map(t => {
                         if (t.mode === "EVENT_FEE") return null;
                         const showInCredit = isCashIn(t);
                         const showInDebit = isCashOut(t);
@@ -525,7 +537,7 @@ const Dashboard = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {players.map(p => (
+                            {Array.isArray(players) && players.map(p => (
                                 <tr key={p.id} className="hover:bg-gray-50">
                                     <td className="p-4 font-bold text-gray-800">{p.name}</td>
                                     <td className="p-4"><p className="font-bold text-gray-700">{p.phone}</p><p className="text-[10px] text-gray-400">{p.email || "No Email"}</p><p className="text-[10px] text-blue-500 uppercase font-bold mt-1">{p.gender} • {p.dob || "-"}</p></td>
@@ -580,9 +592,17 @@ const Dashboard = () => {
                             </div>
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                                 <table className="w-full text-left text-sm">
-                                    <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Stage</th><th className="p-4">Score</th><th className="p-4">Winner</th><th className="p-4 text-right">Actions</th></tr></thead>
-                                    <tbody className="divide-y divide-gray-50">{matches.map(m => (<tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/></div></td>
+                                    <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold"><tr><th className="p-4">Teams</th><th className="p-4">Date & Time</th><th className="p-4">Stage</th><th className="p-4">Score</th><th className="p-4">Winner</th><th className="p-4 text-right">Actions</th></tr></thead>
+                                    <tbody className="divide-y divide-gray-50">{Array.isArray(matches) && matches.map(m => (<tr key={m.id} className={m.status === "Pending Verification" ? "bg-yellow-50" : ""}><td className="p-4"><div className="flex flex-col gap-1"><input id={`t1-${m.id}`} defaultValue={m.t1} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/><input id={`t2-${m.id}`} defaultValue={m.t2} className="p-1 bg-transparent rounded text-xs font-bold border-none w-32"/></div></td>
                                     
+                                    {/* NEW: Date & Time Inputs */}
+                                    <td className="p-4">
+                                        <div className="flex flex-col gap-1">
+                                            <input id={`date-${m.id}`} type="date" defaultValue={m.date} className="p-1 bg-transparent rounded text-xs font-bold border border-gray-100 w-24"/>
+                                            <input id={`time-${m.id}`} type="time" defaultValue={m.time} className="p-1 bg-transparent rounded text-xs font-bold border border-gray-100 w-24"/>
+                                        </div>
+                                    </td>
+
                                     <td className="p-4"><span className="text-[9px] text-gray-500 uppercase font-bold bg-gray-100 px-2 py-1 rounded">{m.stage}</span></td>
 
                                     <td className="p-4">
@@ -617,7 +637,7 @@ const Dashboard = () => {
                                 <tr><th className="p-4">Rank</th><th className="p-4">Team</th><th className="p-4 text-center">Played</th><th className="p-4 text-center">Won</th><th className="p-4 text-center">Games</th><th className="p-4 text-center">Points</th></tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {filteredLeaderboard.length > 0 ? (
+                                {Array.isArray(filteredLeaderboard) && filteredLeaderboard.length > 0 ? (
                                     filteredLeaderboard.map((team, i) => (
                                     <tr key={i} className={i < 2 ? "bg-green-50/50" : ""}>
                                         <td className="p-4 font-bold text-gray-400 text-xs">#{i+1}</td>
