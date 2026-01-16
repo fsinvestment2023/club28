@@ -987,9 +987,8 @@ def create_pickup_match(data: PickupMatchCreate, db: Session = Depends(get_db)):
 
 @app.get("/match/list")
 def get_pickup_matches(type: str = "PUBLIC", user_id: int = 0, db: Session = Depends(get_db)):
-    # If user_id provided, return upcoming matches for that user
+    # If user_id provided, return matches for that user (UPCOMING/INVITES)
     if user_id > 0:
-        # Get matches user is part of
         participations = db.query(models.PickupPlayer).filter(models.PickupPlayer.user_id == user_id).all()
         matches = []
         for p in participations:
@@ -1000,20 +999,24 @@ def get_pickup_matches(type: str = "PUBLIC", user_id: int = 0, db: Session = Dep
                     "id": m.id, "date": m.date, "time": m.time, "venue": m.venue,
                     "sport": m.sport, "status": m.status, "player_status": p.status,
                     "host_name": host.name if host else "Unknown",
-                    "type": m.type
+                    "type": m.type,
+                    "filled": m.filled_slots,  # Ensure this is sent
+                    "total": m.total_slots     # Ensure this is sent
                 })
         return matches
 
-    # Otherwise return Public matches that are OPEN
+    # Otherwise return Public/Private matches
     matches = db.query(models.PickupMatch).filter(
         models.PickupMatch.type == type, 
-        models.PickupMatch.status == "OPEN"
+        models.PickupMatch.status != "CANCELLED"
     ).all()
     
     result = []
     for m in matches:
         host = db.query(models.User).filter(models.User.id == m.host_id).first()
-        players_count = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
+        # Calculate filled slots dynamically to be safe
+        filled_count = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
+        
         result.append({
             "id": m.id,
             "host_name": host.name if host else "Unknown",
@@ -1023,14 +1026,15 @@ def get_pickup_matches(type: str = "PUBLIC", user_id: int = 0, db: Session = Dep
             "time": m.time,
             "venue": m.venue,
             "cost_per_person": m.cost_per_person,
-            "slots_open": m.total_slots - players_count,
-            "total_slots": m.total_slots,
+            "filled": filled_count,
+            "total": m.total_slots,
             "is_flexible": m.is_flexible,
             "description": m.description,
-            "join_mode": m.join_mode
+            "join_mode": m.join_mode,
+            "status": m.status
         })
     return result
-
+    
 @app.get("/match/my-hosted/{team_id}")
 def get_hosted_matches(team_id: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
@@ -1054,40 +1058,46 @@ def join_pickup_match(data: JoinPickupRequest, db: Session = Depends(get_db)):
     
     if not user or not match: raise HTTPException(status_code=404, detail="Not found")
     
+    # Check if already joined or invited
     existing = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == match.id, models.PickupPlayer.user_id == user.id).first()
-    if existing: raise HTTPException(status_code=400, detail="Already joined/requested")
+    
+    new_status = "CONFIRMED"
+    new_payment = "PENDING"
 
-    # Check Public Payment
-    payment_status = "PENDING"
-    status = "CONFIRMED"
+    # LOGIC: If accepting an invite OR joining a public match -> Check Payment
+    if match.type == "PUBLIC" or (existing and existing.status == "INVITED"):
+        # For this logic, we assume "Pay" means deducting from wallet
+        if match.cost_per_person > 0:
+            if user.wallet_balance < match.cost_per_person:
+                raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
+            
+            user.wallet_balance -= match.cost_per_person
+            db.add(models.Transaction(user_id=user.id, amount=match.cost_per_person, type="DEBIT", mode="MATCH_JOIN", description=f"Join Match #{match.id}"))
+            new_payment = "PAID_PLATFORM"
     
-    if match.type == "PUBLIC":
-        if user.wallet_balance < match.cost_per_person:
-            raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
-        
-        # Deduct
-        user.wallet_balance -= match.cost_per_person
-        db.add(models.Transaction(user_id=user.id, amount=match.cost_per_person, type="DEBIT", mode="MATCH_JOIN", description=f"Join Match #{match.id}"))
-        payment_status = "PAID_PLATFORM"
-        
-    if match.join_mode == "REQUEST":
-        status = "REQUESTED"
+    if match.join_mode == "REQUEST" and not (existing and existing.status == "INVITED"):
+        new_status = "REQUESTED"
+
+    if existing:
+        # Update existing invite
+        existing.status = new_status
+        existing.payment_status = new_payment
+    else:
+        # Create new entry
+        db.add(models.PickupPlayer(match_id=match.id, user_id=user.id, status=new_status, payment_status=new_payment))
     
-    new_player = models.PickupPlayer(
-        match_id=match.id,
-        user_id=user.id,
-        status=status,
-        payment_status=payment_status
-    )
-    db.add(new_player)
+    # Update filled slots count if confirmed
+    if new_status == "CONFIRMED":
+        match.filled_slots += 1
+        
     db.commit()
     
     # Notify Host
     host = db.query(models.User).filter(models.User.id == match.host_id).first()
     if host and host.push_token:
-        send_push_alert(host.push_token, "New Player! 🎾", f"{user.name} joined your match!")
+        send_push_alert(host.push_token, "New Player! 🎾", f"{user.name} has joined your match!")
 
-    return {"status": "joined", "player_status": status}
+    return {"status": "joined", "player_status": new_status}
 
 @app.post("/match/invite")
 def invite_player(data: InvitePlayerRequest, db: Session = Depends(get_db)):
@@ -1147,9 +1157,9 @@ def get_match_details(match_id: int, db: Session = Depends(get_db)):
 
 @app.get("/user/list")
 def get_user_list(db: Session = Depends(get_db)):
-    # Returns a lightweight list of users for the directory
     users = db.query(models.User).all()
-    return [{"name": u.name, "team_id": u.team_id} for u in users]
+    # Return simple list for the directory
+    return [{"name": u.name, "team_id": u.team_id, "id": u.id} for u in users]
 
 @app.post("/match/respond-request")
 def respond_pickup_request(data: RespondPickupRequest, db: Session = Depends(get_db)):

@@ -94,6 +94,10 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("PERSONAL");
 
+  // INVITE POPUP STATE
+  const [inviteModal, setInviteModal] = useState(false);
+  const [pendingInvite, setPendingInvite] = useState<any>(null);
+
   // Payment
   const [payModal, setPayModal] = useState(false);
   const [orderDetails, setOrderDetails] = useState(null);
@@ -148,6 +152,7 @@ export default function App() {
   useEffect(() => {
     if(isLoggedIn && teamId) {
         fetchDashboardData(teamId);
+        checkForInvites(teamId); // Check for invites on load
     }
   }, [selectedRegIndex, isLoggedIn, teamId]);
 
@@ -208,10 +213,33 @@ export default function App() {
     } catch (e) { console.log("Fetch Error", e); }
   };
 
+  const checkForInvites = async (tid: string) => {
+      try {
+          const userRes = await axios.get(`${API_URL}/user/${tid}`);
+          const userId = userRes.data.id;
+          
+          // Fetch matches where user status is INVITED
+          const res = await axios.get(`${API_URL}/match/list?user_id=${userId}`);
+          const invites = res.data.filter((m: any) => m.player_status === "INVITED");
+          
+          if (invites.length > 0) {
+              setPendingInvite(invites[0]); // Show the first invite
+              setInviteModal(true);
+          }
+      } catch (e) { console.log("Invite Check Error", e); }
+  };
+
+  const acceptInvite = () => {
+      setInviteModal(false);
+      if(pendingInvite) {
+          router.push(`/pickup/${pendingInvite.id}`);
+      }
+  };
+
   const handlePayRequest = async (request: any) => { if (userData.wallet_balance < request.amount_due) { setRequestToPay(request); try { const res = await axios.post(`${API_URL}/razorpay/create-order`, { amount: request.amount_due - userData.wallet_balance }); setOrderDetails({ ...res.data, description: "Join Request Fee", contact: userData.phone, email: userData.email }); setPayModal(true); } catch(e) { Alert.alert("Error", "Payment Init Failed"); } } else { confirmJoinRequest(request); } };
   const confirmJoinRequest = async (request: any) => { try { await axios.post(`${API_URL}/confirm-partner`, { reg_id: request.reg_id, payment_mode: "WALLET" }); Alert.alert("Success", "You have joined the team!"); onRefresh(); } catch(e: any) { Alert.alert("Error", e.response?.data?.detail || "Could not join."); } };
   const handlePaymentSuccess = async (data: any) => { setPayModal(false); try { await axios.post(`${API_URL}/razorpay/verify-payment`, { razorpay_payment_id: data.razorpay_payment_id, razorpay_order_id: data.razorpay_order_id, razorpay_signature: data.razorpay_signature, team_id: userData.team_id, amount: orderDetails ? (orderDetails as any).amount / 100 : 0 }); const userRes = await axios.get(`${API_URL}/user/${userData.team_id}`); setUserData(userRes.data); if(requestToPay) confirmJoinRequest(requestToPay); } catch(e) { Alert.alert("Error", "Verification Failed"); } };
-  const onRefresh = async () => { setRefreshing(true); await fetchDashboardData(teamId); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await fetchDashboardData(teamId); await checkForInvites(teamId); setRefreshing(false); };
   const switchEvent = (index: number) => { setTransactions([]); setNotifications([]); setSelectedRegIndex(index); setShowDropdown(false); };
   const formatDateHeader = (dateStr: string) => { const parts = dateStr.split('-'); const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])); return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(); };
   const openScoreModal = (match: any) => { setSelectedMatch(match); setScoreInput(""); setModalVisible(true); };
@@ -228,7 +256,6 @@ export default function App() {
   if (checkingAuth) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb"/></View>;
 
   if (!isLoggedIn) {
-    // ... (Login/Register/Forgot UI - same as before) ...
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor:'#2563eb'}}>
             <SafeAreaView style={styles.loginContainer}>
@@ -358,6 +385,24 @@ export default function App() {
 
       <RazorpayCheckout visible={payModal} onClose={() => setPayModal(false)} orderDetails={orderDetails} onSuccess={handlePaymentSuccess} />
 
+      {/* --- INVITE MODAL POPUP --- */}
+      <Modal visible={inviteModal} transparent animationType="fade">
+          <View style={styles.modalBg}>
+              <View style={styles.modalCard}>
+                  <Text style={styles.modalTitle}>MATCH INVITE! 🎾</Text>
+                  <Text style={{textAlign:'center', color:'#666', marginBottom:20}}>
+                      {pendingInvite?.host_name} has invited you to a match on {pendingInvite?.date} at {pendingInvite?.venue}.
+                  </Text>
+                  <TouchableOpacity style={styles.mainBtn} onPress={acceptInvite}>
+                      <Text style={styles.btnText}>VIEW & JOIN</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={{marginTop:15}} onPress={() => setInviteModal(false)}>
+                      <Text style={{color:'#999', fontWeight:'bold'}}>CLOSE</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+      </Modal>
+
       <Modal visible={showNotifModal} transparent animationType="fade"><View style={styles.modalBg}><View style={[styles.modalCard, {height:'60%'}]}><View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom:10}}><Text style={styles.modalTitle}>NOTIFICATIONS</Text><TouchableOpacity onPress={() => setShowNotifModal(false)}><Feather name="x" size={24} color="#333"/></TouchableOpacity></View><ScrollView style={{width:'100%'}}>{notifications.length > 0 ? notifications.map((n, i) => (<View key={i} style={[styles.notifItem, {borderBottomWidth:1, borderBottomColor:'#eee'}]}><View style={{flex:1}}><Text style={styles.notifTitle}>{n.title}</Text><Text style={styles.notifMsg}>{n.message}</Text></View><Text style={styles.notifTime}>{n.sub_text}</Text></View>)) : <Text style={{textAlign:'center', marginTop:50, color:'#999'}}>No notifications.</Text>}</ScrollView></View></View></Modal>
       
       {/* KEYBOARD FIX */}
@@ -391,7 +436,7 @@ const styles = StyleSheet.create({
   glassCard: { backgroundColor:'white', padding:25, borderRadius:20, width:'100%', shadowColor:'#000', shadowOpacity:0.2, shadowRadius:10, elevation:5 },
   cardTitle: { fontSize: 20, fontWeight:'bold', marginBottom: 20, color:'#333' },
   input: { backgroundColor: '#f3f4f6', padding: 15, borderRadius: 10, marginBottom: 15, fontSize: 16 },
-  mainBtn: { backgroundColor: '#2563eb', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  mainBtn: { backgroundColor: '#2563eb', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10, width:'100%' },
   btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
   row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 },
   linkText: { color: '#666', fontSize: 14, fontWeight:'600' },
@@ -451,7 +496,7 @@ const styles = StyleSheet.create({
   actionBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalCard: { backgroundColor: 'white', width: '80%', padding: 25, borderRadius: 20, alignItems: 'center' },
-  modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 5 },
+  modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 15 },
   modalSub: { color: '#666', marginBottom: 20 },
   scoreInput: { backgroundColor: '#f3f4f6', width: '100%', padding: 15, borderRadius: 10, textAlign: 'center', fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
   submitBtn: { backgroundColor: '#2563eb', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 10 },
@@ -481,7 +526,7 @@ const styles = StyleSheet.create({
   notifTime: { fontSize:9, fontWeight:'bold', color:'#9ca3af' },
   greenCard: { backgroundColor: '#10b981', borderRadius: 20, padding: 25, marginTop: 5, position: 'relative', overflow: 'hidden' },
   earningsLabel: { color: 'white', fontSize: 10, fontWeight: 'bold', opacity: 0.9 },
-  earningsValue: { color: 'white', fontSize: 32, fontWeight: '900', marginTop: 5 }, // Font size reduced slightly
+  earningsValue: { color: 'white', fontSize: 32, fontWeight: '900', marginTop: 5 }, 
   bgIcon: { position: 'absolute', right: -10, bottom: -15, opacity: 0.2 },
   prizeTxnRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 15, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
   prizeTxnTitle: { fontSize: 12, fontWeight: '900', color: '#333' },

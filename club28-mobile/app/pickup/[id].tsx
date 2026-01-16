@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, TextInput, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +15,10 @@ export default function PickupDetailScreen() {
   const [players, setPlayers] = useState<any[]>([]);
   const [userTeamId, setUserTeamId] = useState("");
   const [inviteId, setInviteId] = useState("");
+  
+  // EDIT MODAL STATE
+  const [showEdit, setShowEdit] = useState(false);
+  const [editData, setEditData] = useState({ date: "", time: "", venue: "", description: "" });
 
   useEffect(() => { loadDetails(); }, []);
 
@@ -26,6 +30,12 @@ export default function PickupDetailScreen() {
         const res = await axios.get(`${API_URL}/match/details/${id}`);
         setMatch(res.data.match);
         setPlayers(res.data.players);
+        setEditData({
+            date: res.data.match.date,
+            time: res.data.match.time,
+            venue: res.data.match.venue,
+            description: res.data.match.description
+        });
     } catch (e) {
         Alert.alert("Error", "Could not load match");
         router.back();
@@ -33,26 +43,33 @@ export default function PickupDetailScreen() {
   };
 
   const handleJoin = async () => {
-      try {
-          if (match.type === "PUBLIC") {
-              Alert.alert("Confirm Payment", `Pay ₹${match.cost_per} to join?`, [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Pay & Join", onPress: processJoin }
-              ]);
-          } else {
-              processJoin();
-          }
-      } catch (e) { console.log(e); }
+      // If Public OR Invited Private Match, require "Payment" logic (deducting from wallet)
+      const cost = match.cost_per;
+      const confirmMsg = cost > 0 ? `Pay ₹${cost} & Join?` : "Confirm Join?";
+      
+      Alert.alert("Confirm", confirmMsg, [
+          { text: "Cancel", style: "cancel" },
+          { text: "Pay & Join", onPress: processJoin }
+      ]);
   };
 
   const processJoin = async () => {
       try {
           await axios.post(`${API_URL}/match/join`, { match_id: match.id, user_team_id: userTeamId });
-          Alert.alert("Success", match.type === "PUBLIC" ? "Joined & Paid!" : "Request Sent!");
-          loadDetails();
+          Alert.alert("Success", "Joined successfully!");
+          loadDetails(); // Refresh to see updated slots and status
       } catch (e: any) {
           Alert.alert("Error", e.response?.data?.detail || "Failed to join");
       }
+  };
+
+  const handleEdit = async () => {
+      try {
+          await axios.post(`${API_URL}/match/edit`, { match_id: match.id, ...editData });
+          Alert.alert("Success", "Match details updated");
+          setShowEdit(false);
+          loadDetails();
+      } catch (e) { Alert.alert("Error", "Failed to update"); }
   };
 
   const handleInvite = async () => {
@@ -64,36 +81,35 @@ export default function PickupDetailScreen() {
       } catch (e) { Alert.alert("Error", "Player not found or already invited"); }
   };
 
-  const handleResponse = async (playerId: number, action: string) => {
-      try {
-          await axios.post(`${API_URL}/match/respond-request`, { match_id: match.id, player_id: playerId, action });
-          loadDetails();
-      } catch (e) { Alert.alert("Error", "Action failed"); }
-  };
-
   if (loading || !match) return <View style={styles.center}><ActivityIndicator color="#2563eb"/></View>;
 
   const isHost = players.find(p => p.team_id === userTeamId && p.payment === "HOST");
-  const myStatus = players.find(p => p.team_id === userTeamId)?.status;
+  const myPlayerRecord = players.find(p => p.team_id === userTeamId);
+  const myStatus = myPlayerRecord?.status;
+  
+  // Calculate filled slots from confirmed players
+  const filledSlots = players.filter(p => p.status === "CONFIRMED").length;
 
   return (
     <View style={{flex:1, backgroundColor:'#F3F4F6'}}>
         <View style={styles.header}>
             <SafeAreaView edges={['top', 'left', 'right']}>
-                <TouchableOpacity onPress={() => router.back()} style={{marginBottom:10, width:40}}>
-                    <Feather name="arrow-left" size={24} color="white"/>
-                </TouchableOpacity>
-                
-                {/* FIXED: Added fallback string to prevent .toUpperCase() crash */}
+                <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
+                    <TouchableOpacity onPress={() => router.back()} style={{width:40}}>
+                        <Feather name="arrow-left" size={24} color="white"/>
+                    </TouchableOpacity>
+                    {isHost && (
+                        <TouchableOpacity onPress={() => setShowEdit(true)} style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:20}}>
+                            <Text style={{color:'#2563eb', fontWeight:'bold', fontSize:10}}>EDIT</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
                 <Text style={styles.headerTitle}>{(match.sport || "MATCH").toUpperCase()} MATCH</Text>
-                
                 <Text style={styles.headerSub}>{match.date} • {match.venue}</Text>
             </SafeAreaView>
         </View>
 
         <ScrollView contentContainerStyle={{padding:20, paddingBottom:100}}>
-            
-            {/* NEW: Payment Breakdown Section */}
             <View style={styles.card}>
                 <Text style={styles.sectionTitle}>PAYMENT BREAKDOWN</Text>
                 <View style={styles.costRow}>
@@ -129,22 +145,20 @@ export default function PickupDetailScreen() {
                     <Text style={styles.label}>DESCRIPTION</Text>
                     <Text style={styles.text}>{match.description || "No description provided."}</Text>
                 </View>
-                {match.status === "COMPLETED" && <View style={styles.completedBanner}><Text style={{color:'white', fontWeight:'bold', fontSize:12}}>MATCH COMPLETED</Text></View>}
             </View>
 
             <View style={styles.card}>
-                <Text style={styles.sectionTitle}>PLAYERS ({players.filter(p=>p.status==="CONFIRMED").length}/{match.slots})</Text>
+                <Text style={styles.sectionTitle}>PLAYERS ({filledSlots}/{match.slots})</Text>
                 {players.map((p, i) => (
                     <View key={i} style={styles.playerRow}>
                         <View>
                             <Text style={styles.playerName}>{p.name} {p.team_id === userTeamId ? "(You)" : ""}</Text>
-                            <Text style={styles.playerSub}>{p.status} • {p.payment === "PAID_PLATFORM" ? "PAID" : p.payment}</Text>
+                            <Text style={styles.playerSub}>{p.status} • {p.payment === "PAID_PLATFORM" || p.payment === "HOST" ? "PAID" : "PENDING"}</Text>
                         </View>
-                        {isHost && p.status === "REQUESTED" && (
-                            <View style={{flexDirection:'row', gap:10}}>
-                                <TouchableOpacity onPress={()=>handleResponse(p.id, "ACCEPT")}><Feather name="check-circle" size={20} color="green"/></TouchableOpacity>
-                                <TouchableOpacity onPress={()=>handleResponse(p.id, "REJECT")}><Feather name="x-circle" size={20} color="red"/></TouchableOpacity>
-                            </View>
+                        {p.status === "CONFIRMED" ? (
+                            <Feather name="check-circle" size={18} color="green"/>
+                        ) : (
+                            <Text style={{fontSize:10, fontWeight:'bold', color:'orange'}}>{p.status}</Text>
                         )}
                     </View>
                 ))}
@@ -161,13 +175,41 @@ export default function PickupDetailScreen() {
             )}
         </ScrollView>
 
-        {!isHost && !myStatus && match.status === "OPEN" && (
+        {/* LOGIC: Show Button if (Not Host) AND (Not Joined OR Invited) AND (Slots Available) */}
+        {!isHost && match.status === "OPEN" && (
             <View style={styles.footer}>
-                <TouchableOpacity style={styles.joinBtn} onPress={handleJoin}>
-                    <Text style={styles.joinText}>{match.join_mode === 'REQUEST' ? 'REQUEST TO JOIN' : `REGISTER & PAY ₹${match.cost_per}`}</Text>
-                </TouchableOpacity>
+                {myStatus === "INVITED" ? (
+                    <TouchableOpacity style={styles.joinBtn} onPress={handleJoin}>
+                        <Text style={styles.joinText}>ACCEPT & PAY ₹{match.cost_per}</Text>
+                    </TouchableOpacity>
+                ) : !myStatus ? (
+                    <TouchableOpacity style={styles.joinBtn} onPress={handleJoin}>
+                        <Text style={styles.joinText}>{match.join_mode === 'REQUEST' ? 'REQUEST TO JOIN' : `REGISTER & PAY ₹${match.cost_per}`}</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <View style={{alignItems:'center'}}>
+                        <Text style={{fontWeight:'bold', color:'#999'}}>STATUS: {myStatus}</Text>
+                    </View>
+                )}
             </View>
         )}
+
+        {/* EDIT MODAL */}
+        <Modal visible={showEdit} transparent animationType="slide">
+            <View style={styles.modalBg}>
+                <View style={styles.modalCard}>
+                    <Text style={styles.modalTitle}>EDIT MATCH</Text>
+                    <TextInput style={styles.modalInput} placeholder="Date" value={editData.date} onChangeText={t=>setEditData({...editData, date:t})}/>
+                    <TextInput style={styles.modalInput} placeholder="Time" value={editData.time} onChangeText={t=>setEditData({...editData, time:t})}/>
+                    <TextInput style={styles.modalInput} placeholder="Venue" value={editData.venue} onChangeText={t=>setEditData({...editData, venue:t})}/>
+                    <TextInput style={styles.modalInput} placeholder="Description" value={editData.description} onChangeText={t=>setEditData({...editData, description:t})}/>
+                    <View style={{flexDirection:'row', gap:10, marginTop:10}}>
+                        <TouchableOpacity style={styles.cancelBtn} onPress={()=>setShowEdit(false)}><Text>CANCEL</Text></TouchableOpacity>
+                        <TouchableOpacity style={styles.saveBtn} onPress={handleEdit}><Text style={{color:'white', fontWeight:'bold'}}>SAVE</Text></TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
     </View>
   );
 }
@@ -175,7 +217,7 @@ export default function PickupDetailScreen() {
 const styles = StyleSheet.create({
   center: {flex:1, justifyContent:'center', alignItems:'center'},
   header: { backgroundColor: '#2563eb', padding: 20, paddingBottom: 30, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-  headerTitle: { color: 'white', fontSize: 20, fontWeight: '900', fontStyle: 'italic' },
+  headerTitle: { color: 'white', fontSize: 20, fontWeight: '900', fontStyle: 'italic', marginTop: 10 },
   headerSub: { color: '#bfdbfe', fontWeight: 'bold', fontSize: 12, marginTop: 5 },
   card: { backgroundColor: 'white', padding: 20, borderRadius: 20, marginBottom: 15, shadowColor:'#000', shadowOpacity:0.05, shadowRadius:5, elevation:2 },
   label: { fontSize: 10, fontWeight: 'bold', color: '#9ca3af', marginBottom: 5 },
@@ -192,10 +234,16 @@ const styles = StyleSheet.create({
   joinText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
   completedBanner: { marginTop: 15, backgroundColor: '#10b981', padding: 10, borderRadius: 8, alignItems: 'center' },
   
-  // Cost Breakdown Styles
   costRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   costBox: { alignItems: 'center', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#f3f4f6', flex: 1, marginHorizontal: 2 },
   costLabel: { fontSize: 8, fontWeight: 'bold', color: '#9ca3af', marginBottom: 2 },
   costValue: { fontSize: 14, fontWeight: '900', color: '#333' },
-  divider: { height: 1, backgroundColor: '#f3f4f6', marginVertical: 15 }
+  divider: { height: 1, backgroundColor: '#f3f4f6', marginVertical: 15 },
+
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalCard: { backgroundColor: 'white', width: '80%', padding: 25, borderRadius: 20 },
+  modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 15 },
+  modalInput: { backgroundColor: '#f3f4f6', padding: 10, borderRadius: 10, marginBottom: 10 },
+  cancelBtn: { padding: 15 },
+  saveBtn: { backgroundColor: '#2563eb', padding: 15, borderRadius: 10, flex: 1, alignItems: 'center' }
 });
