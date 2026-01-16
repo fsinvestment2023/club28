@@ -298,7 +298,9 @@ export default function App() {
             <ActionCircle icon="calendar" label="Book Court" onPress={() => Alert.alert("Coming Soon")} />
             <ActionCircle icon="book-open" label="Learn" onPress={() => Alert.alert("Coming Soon")} />
             <TouchableOpacity style={{alignItems:'center'}} onPress={() => router.push('/compete')}><View style={[styles.circle, {backgroundColor:'#2563eb'}]}><FontAwesome5 name="trophy" size={20} color="white" /></View><Text style={styles.circleLabel}>Compete</Text></TouchableOpacity>
-            <ActionCircle icon="search" label="Find Match" onPress={() => Alert.alert("Coming Soon")} />
+            
+            {/* UPDATED: LINKED TO FIND MATCH SCREEN */}
+            <ActionCircle icon="search" label="Find Match" onPress={() => router.push('/findmatch')} />
         </View>
 
         {pendingRequests.length > 0 && pendingRequests.map((req, i) => (
@@ -339,7 +341,6 @@ export default function App() {
             <View style={styles.greenCard}>
                 <Text style={styles.earningsLabel}>{activeEvent ? activeEvent.tournament.toUpperCase() : "EVENT"} WINNINGS</Text>
                 
-                {/* --- FIXED TEXT OVERFLOW HERE --- */}
                 <Text style={styles.earningsValue} numberOfLines={1} adjustsFontSizeToFit>₹{eventWinnings}</Text>
                 
                 <FontAwesome5 name="trophy" size={80} color="white" style={styles.bgIcon} />

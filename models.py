@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, DateTime, Boolean, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -22,6 +22,10 @@ class User(Base):
     registration_date = Column(DateTime(timezone=True), server_default=func.now()) 
     registrations = relationship("Registration", back_populates="user", foreign_keys="Registration.user_id")
     transactions = relationship("Transaction", back_populates="user")
+    
+    # NEW RELATIONSHIPS
+    hosted_matches = relationship("PickupMatch", back_populates="host")
+    pickup_participations = relationship("PickupPlayer", back_populates="user")
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -82,8 +86,6 @@ class Match(Base):
     time = Column(String) 
     stage = Column(String, default="Group")
     submitted_by_team = Column(String, default=None)
-    
-    # NEW: Stores comma-separated hours sent (e.g., "24,12,2")
     sent_reminders = Column(String, default="") 
 
 class ClubInfo(Base):
@@ -101,9 +103,49 @@ class Notification(Base):
     message = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# NEW TABLE: Stores dynamic settings (Reminders, Facts, etc.)
 class SystemSettings(Base):
     __tablename__ = "system_settings"
     id = Column(Integer, primary_key=True, index=True)
-    key = Column(String, unique=True) # e.g. "reminder_hours"
-    value = Column(String)            # e.g. "[24, 12, 2]"
+    key = Column(String, unique=True) 
+    value = Column(String)            
+
+# --- NEW TABLES FOR FIND MATCH FEATURE ---
+
+class PickupMatch(Base):
+    __tablename__ = "pickup_matches"
+    id = Column(Integer, primary_key=True, index=True)
+    host_id = Column(Integer, ForeignKey("users.id"))
+    type = Column(String)  # PUBLIC or PRIVATE
+    sport = Column(String, default="Padel")
+    date = Column(String)
+    time = Column(String)
+    venue = Column(String)
+    description = Column(String, default="")
+    
+    total_slots = Column(Integer)
+    filled_slots = Column(Integer, default=1) # Host is 1
+    total_cost = Column(Integer)
+    cost_per_person = Column(Integer)
+    
+    is_flexible = Column(Boolean, default=False)
+    join_mode = Column(String, default="OPEN") # OPEN or REQUEST
+    status = Column(String, default="OPEN") # OPEN, FULL, COMPLETED, CANCELLED
+    
+    payout_status = Column(String, default="PENDING") # PENDING, PAID_TO_HOST
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    host = relationship("User", back_populates="hosted_matches")
+    players = relationship("PickupPlayer", back_populates="match", cascade="all, delete-orphan")
+
+class PickupPlayer(Base):
+    __tablename__ = "pickup_players"
+    id = Column(Integer, primary_key=True, index=True)
+    match_id = Column(Integer, ForeignKey("pickup_matches.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    
+    status = Column(String, default="CONFIRMED") # REQUESTED, CONFIRMED, REJECTED, INVITED
+    payment_status = Column(String, default="PENDING") # PENDING, PAID_PLATFORM, PAID_HOST_DIRECT
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    match = relationship("PickupMatch", back_populates="players")
+    user = relationship("User", back_populates="pickup_participations")

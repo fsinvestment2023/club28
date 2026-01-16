@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter, FileText, Info, Edit, Settings, CheckCircle, Bell, Send } from 'lucide-react';
+import { RefreshCw, Calendar, Save, Plus, Edit2, X, Trash2, Users, Wallet, UserPlus, MapPin, Activity, Trophy, List, Filter, FileText, Info, Edit, Settings, CheckCircle, Bell, Send, Search } from 'lucide-react';
 
 const Dashboard = () => {
   // --- STATE ---
@@ -13,6 +13,7 @@ const Dashboard = () => {
 
   const [tournaments, setTournaments] = useState([]);
   const [matches, setMatches] = useState([]);
+  const [pickupMatches, setPickupMatches] = useState([]); // NEW STATE FOR PICKUP
   const [players, setPlayers] = useState([]);
   const [tournamentPlayers, setTournamentPlayers] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]); 
@@ -88,6 +89,14 @@ const Dashboard = () => {
               setMatches(filtered.sort((a,b) => a.id - b.id)); 
           } else { setMatches([]); }
       } catch(e) { setMatches([]); } 
+  };
+  
+  const fetchPickupMatches = async () => {
+      try {
+          const res = await fetch(`${API_URL}/admin/pickup-matches`);
+          const data = await res.json();
+          setPickupMatches(Array.isArray(data) ? data : []);
+      } catch (e) { setPickupMatches([]); }
   };
   
   const fetchPlayers = async () => { try { const res = await fetch(`${API_URL}/admin/players`); const data = await res.json(); setPlayers(Array.isArray(data) ? data : []); } catch(e){ setPlayers([]); } };
@@ -172,6 +181,18 @@ const Dashboard = () => {
           else alert("Error updating status");
       } catch(e) { console.error(e); }
   };
+  
+  const handleDeletePickup = async (id) => {
+      if(!window.confirm("Delete this hosted match?")) return;
+      try {
+          await fetch(`${API_URL}/admin/delete-pickup`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ id })
+          });
+          fetchPickupMatches();
+      } catch(e) { console.error(e); }
+  };
 
   const handleViewHistory = async (player) => {
       setViewingPlayer(player);
@@ -199,6 +220,7 @@ const Dashboard = () => {
       if(isAuthenticated) { 
           if (activeTab === "PLAYERS") fetchPlayers(); 
           else if (activeTab === "ACCOUNTS") fetchTransactions();
+          else if (activeTab === "PICKUP") fetchPickupMatches();
           else if (activeTab === "CONTENT") { fetchAppContent(); }
           else if (activeTab === "MANAGE" && selectedTournament) { fetchMatches(); fetchTournamentPlayers(); fetchLeaderboard(); } else { fetchMatches(); } 
       } 
@@ -343,6 +365,7 @@ const Dashboard = () => {
         <h1 className="font-black text-xl text-blue-900 italic mb-6 px-2">CLUB 28 ADMIN</h1>
         <div className="space-y-1">
             <button onClick={() => {setActiveTab("TOURNAMENTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "TOURNAMENTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Events</button>
+            <button onClick={() => {setActiveTab("PICKUP"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "PICKUP" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Pickup Matches</button>
             <button onClick={() => {setActiveTab("PLAYERS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "PLAYERS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Players & Wallet</button>
             <button onClick={() => {setActiveTab("ACCOUNTS"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "ACCOUNTS" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Accounts</button>
             <button onClick={() => {setActiveTab("CONTENT"); setSelectedTournament(null);}} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeTab === "CONTENT" ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-50"}`}>Content (CMS)</button>
@@ -366,6 +389,45 @@ const Dashboard = () => {
                         <div className="flex justify-end gap-2 border-t border-gray-100 pt-3"><button onClick={(e) => { e.stopPropagation(); openEditModal(t); }} className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-blue-100 hover:text-blue-600"><Edit2 size={16}/></button><button onClick={(e) => { e.stopPropagation(); handleDeleteTournament(t.id); }} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 hover:text-red-700"><Trash2 size={16}/></button></div>
                     </div>
                 ))}
+            </div>
+        )}
+
+        {activeTab === "PICKUP" && (
+            <div>
+                <h2 className="text-3xl font-black text-gray-800 mb-6 flex items-center gap-2"><Search size={28}/> Pickup Matches</h2>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-gray-50 text-gray-400 border-b border-gray-100 text-xs uppercase font-bold">
+                            <tr>
+                                <th className="p-4">ID</th>
+                                <th className="p-4">Type</th>
+                                <th className="p-4">Sport</th>
+                                <th className="p-4">Host</th>
+                                <th className="p-4">Date & Venue</th>
+                                <th className="p-4">Slots</th>
+                                <th className="p-4">Status</th>
+                                <th className="p-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                            {pickupMatches.map(m => (
+                                <tr key={m.id} className="hover:bg-gray-50">
+                                    <td className="p-4 font-mono text-gray-400 text-xs">#{m.id}</td>
+                                    <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${m.type === 'PUBLIC' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{m.type}</span></td>
+                                    <td className="p-4 font-bold text-gray-700">{m.sport}</td>
+                                    <td className="p-4 font-bold text-gray-800">{m.host_name}</td>
+                                    <td className="p-4 text-xs font-bold text-gray-500">{m.date}<br/>{m.venue}</td>
+                                    <td className="p-4 font-bold text-gray-700">{m.filled} / {m.total}</td>
+                                    <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${m.status === 'OPEN' ? 'bg-blue-100 text-blue-700' : (m.status === 'FULL' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500')}`}>{m.status}</span></td>
+                                    <td className="p-4 text-right">
+                                        <button onClick={() => handleDeletePickup(m.id)} className="bg-red-50 text-red-500 p-2 rounded hover:bg-red-100"><Trash2 size={16}/></button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {pickupMatches.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-gray-400 text-sm">No hosted matches found.</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         )}
         
