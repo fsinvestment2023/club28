@@ -86,6 +86,8 @@ def parse_match_datetime(date_str, time_str):
             continue
     return None
 
+# --- BACKGROUND TASKS ---
+
 def check_match_reminders():
     db = SessionLocal()
     try:
@@ -113,15 +115,10 @@ def check_match_reminders():
     finally:
         db.close()
 
-def send_match_alert(db, match, title, body):
-    player_ids = re.findall(r'\((.*?)\)', match.t1 + match.t2)
-    for tid in player_ids:
-        user = db.query(models.User).filter(models.User.team_id == tid).first()
-        if user and user.push_token:
-            send_push_alert(user.push_token, title, body)
-
-# --- NEW: PAYOUT SCHEDULER FOR PUBLIC MATCHES ---
 def process_pickup_payouts():
+    """
+    Releases funds to the host 4 hours after a Public Pickup Match ends.
+    """
     db = SessionLocal()
     try:
         # Find completed public matches where payout is pending
@@ -139,7 +136,7 @@ def process_pickup_payouts():
             
             # If match ended more than 4 hours ago
             if now > (match_dt + timedelta(hours=4)):
-                # Only count players who PAID_PLATFORM (excluding host)
+                # Count paying players
                 paying_players = db.query(models.PickupPlayer).filter(
                     models.PickupPlayer.match_id == m.id,
                     models.PickupPlayer.payment_status == "PAID_PLATFORM"
@@ -158,10 +155,11 @@ def process_pickup_payouts():
                             mode="MATCH_PAYOUT", 
                             description=f"Host Payout: Match #{m.id}"
                         ))
-                        send_push_alert(host.push_token, "Payout Received 💰", f"₹{total_to_transfer} credited for hosting Match #{m.id}")
+                        if host.push_token:
+                            send_push_alert(host.push_token, "Payout Received 💰", f"₹{total_to_transfer} credited for hosting Match #{m.id}")
                 
                 m.payout_status = "COMPLETED"
-                # Ensure status is marked completed if it wasn't manually
+                # Auto-close match if it wasn't marked full or done
                 if m.status == "OPEN" or m.status == "FULL":
                     m.status = "COMPLETED"
                 db.commit()
@@ -174,7 +172,7 @@ def process_pickup_payouts():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.add_job(check_match_reminders, 'interval', minutes=1)
-    scheduler.add_job(process_pickup_payouts, 'interval', minutes=60) # Runs every hour
+    scheduler.add_job(process_pickup_payouts, 'interval', minutes=60)
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -284,48 +282,17 @@ class PushTokenUpdate(BaseModel): team_id: str; token: str
 class SettingsUpdate(BaseModel): key: str; value: list 
 class PasswordResetRequest(BaseModel): phone: str; new_password: str
 
-# --- FIND MATCH SCHEMAS ---
-class PickupMatchCreate(BaseModel):
-    host_team_id: str
-    type: str  # PUBLIC or PRIVATE
-    sport: str
-    date: str
-    time: str
-    venue: str
-    total_slots: int
-    total_cost: int
-    is_flexible: bool
-    join_mode: str # OPEN or REQUEST
-    description: str = ""
-
-class PickupMatchUpdate(BaseModel):
-    match_id: int
-    date: str
-    time: str
-    venue: str
-    description: str
-
-class JoinPickupRequest(BaseModel):
-    match_id: int
-    user_team_id: str
-
-class InvitePlayerRequest(BaseModel):
-    match_id: int
-    target_team_id: str
-
-class RespondPickupRequest(BaseModel):
-    match_id: int
-    player_id: int
-    action: str # ACCEPT or REJECT
-
+# FIND MATCH SCHEMAS
+class PickupMatchCreate(BaseModel): host_team_id: str; type: str; sport: str; date: str; time: str; venue: str; total_slots: int; total_cost: int; is_flexible: bool; join_mode: str; description: str = ""
+class PickupMatchUpdate(BaseModel): match_id: int; date: str; time: str; venue: str; description: str
+class JoinPickupRequest(BaseModel): match_id: int; user_team_id: str
+class InvitePlayerRequest(BaseModel): match_id: int; target_team_id: str
+class RespondPickupRequest(BaseModel): match_id: int; player_id: int; action: str
 
 # --- ENDPOINTS ---
 
 @app.get("/")
 def read_root(): return {"message": "Club 28 Backend Online"}
-
-# --- WHATSAPP OTP ---
-OTP_CACHE = {}
 
 @app.post("/send-otp")
 def send_otp(data: OTPRequest):
@@ -358,6 +325,345 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     send_whatsapp_msg(data.phone, f"🎉 Welcome to Club 28!\nYour Team ID is: {team_id}\nUse this to login.")
     return {"status": "created", "user": new_user}
 
+@app.post("/login")
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.team_id == data.team_id).first()
+    if not user: raise HTTPException(status_code=404, detail="Team ID not found")
+    if user.password != data.password: raise HTTPException(status_code=401, detail="Wrong Password")
+    return {"status": "success", "user": user}
+
+# Add this endpoint to main.py
+
+@app.get("/user/list")
+def get_user_list(db: Session = Depends(get_db)):
+    """
+    Returns a simple list of all registered users for the mobile app directory.
+    """
+    users = db.query(models.User).all()
+    res = []
+    
+    for u in users:
+        # Calculate some basic stats if needed, or keep it simple
+        res.append({
+            "id": u.id,
+            "name": u.name,
+            "team_id": u.team_id,
+            "gender": u.gender or "-",
+            "play_location": u.play_location or "-",
+            "joined_at": u.registration_date.strftime("%b %Y") if u.registration_date else "-"
+        })
+    
+    # Sort alphabetically by name
+    return sorted(res, key=lambda x: x['name'])
+
+@app.get("/user/{team_id}")
+def get_user_details(team_id: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.team_id == team_id).first()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    
+    regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
+    reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
+    
+    pending = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Pending_Payment").all()
+    pending_list = []
+    for p in pending:
+        partner = db.query(models.User).filter(models.User.id == p.partner_id).first()
+        tourney = db.query(models.Tournament).filter(models.Tournament.name == p.tournament_name, models.Tournament.city == p.city).first()
+        fee = 0
+        if tourney:
+            try:
+                cats = json.loads(tourney.settings)
+                for c in cats:
+                    if c['name'] == p.category: fee = safe_int(c.get('fee')); break
+            except: pass
+        pending_list.append({ "reg_id": p.id, "tournament_name": p.tournament_name, "city": p.city, "level": p.category, "inviter_code": f"{partner.name} ({partner.team_id})" if partner else "Unknown", "amount_due": fee })
+
+    return { "id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance, "email": user.email, "gender": user.gender, "dob": user.dob, "play_location": user.play_location, "bank_details": user.bank_details, "registrations": reg_data, "pending_requests": pending_list }
+
+# --- NEW: ROBUST PLAYERS LIST ENDPOINT ---
+@app.get("/user/list")
+def get_user_list(db: Session = Depends(get_db)):
+    users = db.query(models.User).all()
+    res = []
+    
+    for u in users:
+        # Default stats to 0
+        total_played = 0
+        
+        # Safe Calculation: Wrap in try/except so one error doesn't break the whole list
+        try:
+            # 1. Count Official Matches (Team 1 or Team 2)
+            m_count = db.query(models.Match).filter(
+                (models.Match.t1.contains(u.team_id)) | (models.Match.t2.contains(u.team_id)),
+                models.Match.status == "Official"
+            ).count()
+            
+            # 2. Count Pickup Matches (Confirmed participation)
+            p_count = db.query(models.PickupPlayer).filter(
+                models.PickupPlayer.user_id == u.id,
+                models.PickupPlayer.status == "CONFIRMED"
+            ).count()
+            
+            total_played = m_count + p_count
+        except Exception as e:
+            print(f"Error calculating stats for {u.name}: {e}")
+            # total_played remains 0
+            
+        res.append({
+            "id": u.id,
+            "name": u.name,
+            "team_id": u.team_id,
+            "gender": u.gender or "-",
+            "play_location": u.play_location or "-",
+            "matches_played": total_played,
+            "joined_at": u.registration_date.strftime("%b %Y") if u.registration_date else "-"
+        })
+    
+    # Sort alphabetically by name
+    return sorted(res, key=lambda x: x['name'])
+
+# --- PICKUP MATCH ENDPOINTS ---
+
+@app.post("/match/create")
+def create_pickup_match(data: PickupMatchCreate, db: Session = Depends(get_db)):
+    host = db.query(models.User).filter(models.User.team_id == data.host_team_id).first()
+    if not host: raise HTTPException(status_code=404, detail="Host not found")
+    
+    PLATFORM_FEE = 100
+    if host.wallet_balance < PLATFORM_FEE:
+        raise HTTPException(status_code=400, detail="Insufficient wallet balance for Platform Fee (₹100)")
+    
+    # Deduct Platform Fee
+    host.wallet_balance -= PLATFORM_FEE
+    db.add(models.Transaction(user_id=host.id, amount=PLATFORM_FEE, type="DEBIT", mode="PLATFORM_FEE", description="Hosting Fee"))
+    
+    cost_per = 0
+    if data.total_slots > 0:
+        cost_per = data.total_cost // data.total_slots
+
+    new_match = models.PickupMatch(
+        host_id=host.id,
+        type=data.type,
+        sport=data.sport,
+        date=data.date,
+        time=data.time,
+        venue=data.venue,
+        description=data.description,
+        total_slots=data.total_slots,
+        total_cost=data.total_cost,
+        cost_per_person=cost_per,
+        is_flexible=data.is_flexible,
+        join_mode=data.join_mode
+    )
+    db.add(new_match)
+    db.commit()
+    db.refresh(new_match)
+    
+    # Add Host as a player (Confirmed)
+    db.add(models.PickupPlayer(match_id=new_match.id, user_id=host.id, status="CONFIRMED", payment_status="HOST"))
+    db.commit()
+    
+    return {"status": "created", "match_id": new_match.id}
+
+@app.get("/match/list")
+def get_pickup_matches(type: str = "PUBLIC", user_id: int = 0, db: Session = Depends(get_db)):
+    # If user_id provided, return matches for that user (UPCOMING)
+    if user_id > 0:
+        participations = db.query(models.PickupPlayer).filter(models.PickupPlayer.user_id == user_id).all()
+        matches = []
+        for p in participations:
+            m = db.query(models.PickupMatch).filter(models.PickupMatch.id == p.match_id).first()
+            if m:
+                host = db.query(models.User).filter(models.User.id == m.host_id).first()
+                # Recalculate filled slots
+                filled = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
+                
+                matches.append({
+                    "id": m.id, "date": m.date, "time": m.time, "venue": m.venue,
+                    "sport": m.sport, "status": m.status, "player_status": p.status,
+                    "host_name": host.name if host else "Unknown",
+                    "type": m.type,
+                    "filled": filled,
+                    "total": m.total_slots
+                })
+        return matches
+
+    # Otherwise return Public/Private matches
+    matches = db.query(models.PickupMatch).filter(
+        models.PickupMatch.type == type, 
+        models.PickupMatch.status != "CANCELLED"
+    ).order_by(models.PickupMatch.id.desc()).all()
+    
+    result = []
+    for m in matches:
+        host = db.query(models.User).filter(models.User.id == m.host_id).first()
+        filled_count = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
+        
+        result.append({
+            "id": m.id,
+            "host_name": host.name if host else "Unknown",
+            "host_team_id": host.team_id if host else "",
+            "sport": m.sport,
+            "date": m.date,
+            "time": m.time,
+            "venue": m.venue,
+            "cost_per_person": m.cost_per_person,
+            "filled": filled_count,
+            "total": m.total_slots,
+            "is_flexible": m.is_flexible,
+            "description": m.description,
+            "join_mode": m.join_mode,
+            "status": m.status
+        })
+    return result
+
+@app.get("/match/details/{match_id}")
+def get_match_details(match_id: int, db: Session = Depends(get_db)):
+    m = db.query(models.PickupMatch).filter(models.PickupMatch.id == match_id).first()
+    if not m: raise HTTPException(status_code=404, detail="Match not found")
+    
+    players = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id).all()
+    player_list = []
+    for p in players:
+        u = db.query(models.User).filter(models.User.id == p.user_id).first()
+        player_list.append({"id": p.id, "name": u.name, "team_id": u.team_id, "status": p.status, "payment": p.payment_status})
+        
+    return {
+        "match": {
+            "id": m.id, "type": m.type, "sport": m.sport, "date": m.date, "time": m.time, "venue": m.venue,
+            "cost_per": m.cost_per_person, "total_cost": m.total_cost, "description": m.description,
+            "status": m.status, "slots": m.total_slots, "filled": len([p for p in players if p.status == "CONFIRMED"]),
+            "join_mode": m.join_mode
+        },
+        "players": player_list
+    }
+
+@app.post("/match/join")
+def join_pickup_match(data: JoinPickupRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.team_id == data.user_team_id).first()
+    match = db.query(models.PickupMatch).filter(models.PickupMatch.id == data.match_id).first()
+    
+    if not user or not match: raise HTTPException(status_code=404, detail="Not found")
+    
+    # Check if already joined or invited
+    existing = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == match.id, models.PickupPlayer.user_id == user.id).first()
+    
+    new_status = "CONFIRMED"
+    new_payment = "PENDING"
+
+    # LOGIC: If accepting an invite OR joining a public match -> Check Payment
+    if match.type == "PUBLIC" or (existing and existing.status == "INVITED"):
+        # For this logic, we assume "Pay" means deducting from wallet
+        if match.cost_per_person > 0:
+            if user.wallet_balance < match.cost_per_person:
+                raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
+            
+            user.wallet_balance -= match.cost_per_person
+            db.add(models.Transaction(user_id=user.id, amount=match.cost_per_person, type="DEBIT", mode="MATCH_JOIN", description=f"Join Match #{match.id}"))
+            new_payment = "PAID_PLATFORM"
+    
+    if match.join_mode == "REQUEST" and not (existing and existing.status == "INVITED"):
+        new_status = "REQUESTED"
+
+    if existing:
+        # Update existing invite
+        existing.status = new_status
+        existing.payment_status = new_payment
+    else:
+        # Create new entry
+        db.add(models.PickupPlayer(match_id=match.id, user_id=user.id, status=new_status, payment_status=new_payment))
+    
+    # Update filled slots count if confirmed
+    if new_status == "CONFIRMED":
+        match.filled_slots += 1
+        
+    db.commit()
+    
+    # Notify Host
+    host = db.query(models.User).filter(models.User.id == match.host_id).first()
+    if host and host.push_token:
+        send_push_alert(host.push_token, "New Player! 🎾", f"{user.name} has joined your match!")
+
+    return {"status": "joined", "player_status": new_status}
+
+@app.post("/match/invite")
+def invite_player(data: InvitePlayerRequest, db: Session = Depends(get_db)):
+    match = db.query(models.PickupMatch).filter(models.PickupMatch.id == data.match_id).first()
+    target = db.query(models.User).filter(models.User.team_id == data.target_team_id).first()
+    
+    if not match or not target: raise HTTPException(status_code=404, detail="Not found")
+    
+    # Create Invite
+    existing = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == match.id, models.PickupPlayer.user_id == target.id).first()
+    if not existing:
+        db.add(models.PickupPlayer(match_id=match.id, user_id=target.id, status="INVITED", payment_status="PENDING"))
+        db.commit()
+        if target.push_token:
+            send_push_alert(target.push_token, "Match Invite! 📩", "You have been invited to a match.")
+            
+    return {"status": "invited"}
+
+@app.post("/match/edit")
+def edit_pickup_match(data: PickupMatchUpdate, db: Session = Depends(get_db)):
+    m = db.query(models.PickupMatch).filter(models.PickupMatch.id == data.match_id).first()
+    if m:
+        m.date = data.date
+        m.time = data.time
+        m.venue = data.venue
+        m.description = data.description
+        db.commit()
+    return {"status": "updated"}
+
+@app.post("/match/respond-request")
+def respond_pickup_request(data: RespondPickupRequest, db: Session = Depends(get_db)):
+    player_rec = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == data.match_id, models.PickupPlayer.id == data.player_id).first()
+    if not player_rec: raise HTTPException(status_code=404, detail="Request not found")
+    
+    if data.action == "ACCEPT":
+        player_rec.status = "CONFIRMED"
+    else:
+        player_rec.status = "REJECTED"
+             
+    db.commit()
+    return {"status": "done"}
+    
+@app.get("/match/my-hosted/{team_id}")
+def get_hosted_matches(team_id: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.team_id == team_id).first()
+    if not user: return []
+    matches = db.query(models.PickupMatch).filter(models.PickupMatch.host_id == user.id).order_by(models.PickupMatch.id.desc()).all()
+    
+    res = []
+    for m in matches:
+        filled = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
+        requests = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "REQUESTED").count()
+        res.append({
+            "id": m.id, "date": m.date, "venue": m.venue, "sport": m.sport,
+            "filled": filled, "total": m.total_slots, "requests": requests, "status": m.status, "type": m.type
+        })
+    return res
+
+@app.get("/admin/pickup-matches")
+def get_all_pickup_matches(db: Session = Depends(get_db)):
+    matches = db.query(models.PickupMatch).order_by(models.PickupMatch.id.desc()).all()
+    res = []
+    for m in matches:
+        host = db.query(models.User).filter(models.User.id == m.host_id).first()
+        filled = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
+        res.append({
+            "id": m.id, "type": m.type, "host_name": host.name if host else "Unknown",
+            "sport": m.sport, "venue": m.venue, "date": m.date, "filled": filled, "total": m.total_slots,
+            "status": m.status
+        })
+    return res
+
+@app.post("/admin/delete-pickup")
+def delete_pickup_match(data: MatchDelete, db: Session = Depends(get_db)):
+    db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == data.id).delete()
+    db.query(models.PickupMatch).filter(models.PickupMatch.id == data.id).delete()
+    db.commit()
+    return {"status": "deleted"}
+
 @app.post("/join-tournament")
 def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.phone == data.phone).first()
@@ -380,7 +686,6 @@ def join_tournament(data: JoinRequest, db: Session = Depends(get_db)):
     if user.wallet_balance < pay_amount: raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
     user.wallet_balance -= pay_amount
     
-    # ID STAMPED
     db.add(models.Transaction(user_id=user.id, amount=pay_amount, type="DEBIT", mode="EVENT_FEE", description=f"Fee: {data.tournament_name} [ID:{tourney.id}]"))
 
     partner = None
@@ -431,7 +736,6 @@ def confirm_partner_registration(data: ConfirmPartnerRequest, db: Session = Depe
     if user_b.wallet_balance < pay_amount: raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
     user_b.wallet_balance -= pay_amount
     
-    # ID STAMPED
     db.add(models.Transaction(user_id=user_b.id, amount=pay_amount, type="DEBIT", mode="EVENT_FEE", description=f"Fee: {reg_b.tournament_name} [ID:{tourney.id}]"))
     
     group, status = get_next_group(db, reg_b.tournament_name, reg_b.city, reg_b.category, tourney.draw_size)
@@ -448,7 +752,6 @@ def confirm_partner_registration(data: ConfirmPartnerRequest, db: Session = Depe
 
 @app.get("/user/{team_id}/notifications")
 def get_user_notifications(team_id: str, tournament: str = None, city: str = None, db: Session = Depends(get_db)):
-    # 1. Resolve Active Tournament ID (Strict Lookup)
     active_tourney_id = 0
     if tournament and city:
         all_tourneys = db.query(models.Tournament).all()
@@ -461,7 +764,6 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
     if not user: return []
     final_feed = []
     
-    # 2. PERSONAL TAB (Welcome / Registration) - ID FILTERED
     txns = db.query(models.Transaction).filter(models.Transaction.user_id == user.id, models.Transaction.mode == "EVENT_FEE").order_by(models.Transaction.date.desc()).limit(10).all()
     for t in txns:
         if "(ARCHIVED)" in t.description: continue
@@ -474,33 +776,27 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
         extracted_name = extract_event_name(t.description)
         final_feed.append({ "id": f"welcome_{t.id}", "tab": "PERSONAL", "title": "Registration Successful", "message": f"Welcome to {extracted_name}!", "sub_text": t.date.strftime("%d %b"), "time": t.date.strftime("%I:%M %p"), "sort_key": t.date.timestamp() })
 
-    # 3. PERSONAL TAB (Matches) - STRICT CITY FILTER
     match_query = db.query(models.Match).filter(
         (models.Match.t1.contains(team_id) | models.Match.t2.contains(team_id)), 
         models.Match.status == "Scheduled"
     )
-    if tournament:
-        match_query = match_query.filter(models.Match.category == tournament)
-    if city:
-        match_query = match_query.filter(models.Match.city == city)
+    if tournament: match_query = match_query.filter(models.Match.category == tournament)
+    if city: match_query = match_query.filter(models.Match.city == city)
         
     all_matches = match_query.all()
     for m in all_matches:
         opponent = m.t2 if team_id in m.t1 else m.t1
         final_feed.append({ "id": f"match_{m.id}", "tab": "PERSONAL", "title": "Upcoming Match", "message": f"Vs {opponent}", "sub_text": f"{m.date} @ {m.time}", "time": m.time, "sort_key": 9999999999 }) 
 
-    # 4. EVENT TAB (Results) - STRICT CITY FILTER
     if tournament and city:
         event_matches = db.query(models.Match).filter(
             models.Match.category == tournament,
             models.Match.city == city, 
             models.Match.status == "Official"
         ).order_by(models.Match.id.desc()).limit(20).all()
-        
         for m in event_matches:
             final_feed.append({ "id": f"res_{m.id}", "tab": "EVENT", "title": "Match Result", "message": get_winner_text(m.score, m.t1, m.t2), "sub_text": f"{m.stage} • Score: {m.score}", "time": "", "sort_key": m.id * 10 })
 
-    # 5. COMMUNITY TAB (Others)
     active_tourneys = db.query(models.Tournament).filter(models.Tournament.status == "Open").all()
     for t in active_tourneys:
         if active_tourney_id > 0 and t.id == active_tourney_id: continue
@@ -516,7 +812,6 @@ def get_user_notifications(team_id: str, tournament: str = None, city: str = Non
 def get_user_transactions(team_id: str, tournament: str = None, city: str = None, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.team_id == team_id).first()
     if not user: return []
-    
     active_tourney_id = 0
     if tournament and city:
         all_tourneys = db.query(models.Tournament).all()
@@ -524,15 +819,12 @@ def get_user_transactions(team_id: str, tournament: str = None, city: str = None
             if t.name.lower() == tournament.lower() and t.city.lower() == city.lower():
                 active_tourney_id = t.id
                 break
-
     query = db.query(models.Transaction).filter(models.Transaction.user_id == user.id).order_by(models.Transaction.date.desc())
     all_txns = query.all()
-    
     if active_tourney_id > 0:
         filtered_txns = []
         for t in all_txns:
             if "(ARCHIVED)" in t.description: continue
-            
             tid = extract_event_id(t.description)
             if tid > 0:
                 if tid == active_tourney_id: filtered_txns.append(t)
@@ -540,10 +832,7 @@ def get_user_transactions(team_id: str, tournament: str = None, city: str = None
                 if tournament.upper() in t.description.upper() and city.upper() in t.description.upper():
                     filtered_txns.append(t)
         return filtered_txns
-    
     return all_txns
-
-# --- ADMIN / CRUD ---
 
 @app.post("/admin/create-match")
 def admin_create_match(m: MatchCreate, db: Session = Depends(get_db)):
@@ -554,39 +843,8 @@ def admin_create_match(m: MatchCreate, db: Session = Depends(get_db)):
 @app.get("/tournaments")
 def get_tournaments(db: Session = Depends(get_db)): return db.query(models.Tournament).all()
 
-@app.get("/user/{team_id}")
-def get_user_details(team_id: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.team_id == team_id).first()
-    if not user: raise HTTPException(status_code=404, detail="User not found")
-    
-    regs = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Confirmed").all()
-    reg_data = [{"tournament": r.tournament_name, "city": r.city, "sport": r.sport, "level": r.category, "group": r.group_id} for r in regs]
-    
-    pending = db.query(models.Registration).filter(models.Registration.user_id == user.id, models.Registration.status == "Pending_Payment").all()
-    pending_list = []
-    for p in pending:
-        partner = db.query(models.User).filter(models.User.id == p.partner_id).first()
-        tourney = db.query(models.Tournament).filter(models.Tournament.name == p.tournament_name, models.Tournament.city == p.city).first()
-        fee = 0
-        if tourney:
-            try:
-                cats = json.loads(tourney.settings)
-                for c in cats:
-                    if c['name'] == p.category: fee = safe_int(c.get('fee')); break
-            except: pass
-        pending_list.append({ "reg_id": p.id, "tournament_name": p.tournament_name, "city": p.city, "level": p.category, "inviter_code": f"{partner.name} ({partner.team_id})" if partner else "Unknown", "amount_due": fee })
-
-    return { "id": user.id, "name": user.name, "team_id": user.team_id, "phone": user.phone, "wallet_balance": user.wallet_balance, "email": user.email, "gender": user.gender, "dob": user.dob, "play_location": user.play_location, "bank_details": user.bank_details, "registrations": reg_data, "pending_requests": pending_list }
-
 @app.get("/admin/players")
 def get_all_players(db: Session = Depends(get_db)): return db.query(models.User).all()
-
-@app.post("/login")
-def login(data: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.team_id == data.team_id).first()
-    if not user: raise HTTPException(status_code=404, detail="Team ID not found")
-    if user.password != data.password: raise HTTPException(status_code=401, detail="Wrong Password")
-    return {"status": "success", "user": user}
 
 @app.get("/scores")
 def get_scores(db: Session = Depends(get_db)): return db.query(models.Match).all()
@@ -639,11 +897,7 @@ def get_standings(tournament: str, city: str, level: str = None, db: Session = D
 
 @app.get("/admin/tournament-players")
 def get_tournament_players(name: str, city: str, db: Session = Depends(get_db)):
-    results = db.query(models.Registration).filter(
-        models.Registration.tournament_name == name,
-        models.Registration.city == city,
-        models.Registration.status.in_(["Confirmed", "Partial_Confirmed"]) 
-    ).all()
+    results = db.query(models.Registration).filter(models.Registration.tournament_name == name, models.Registration.city == city, models.Registration.status.in_(["Confirmed", "Partial_Confirmed"])).all()
     players = []
     processed_ids = []
     for reg in results:
@@ -686,7 +940,6 @@ def admin_manual_register(data: AdminAddPlayer, db: Session = Depends(get_db)):
     db.add(new_reg); db.commit()
     return {"message": "User Registered", "group": group}
 
-# --- OTHER UTILS ---
 @app.post("/admin/create-notification")
 def create_notification(data: SystemNotifCreate, db: Session = Depends(get_db)):
     db.add(models.Notification(type=data.type, title=data.title, message=data.message))
@@ -738,10 +991,7 @@ def distribute_prize(match, winner_name, db):
     settings = next((c for c in categories if c['name'] == match_level), None)
     if not settings: return
     per_match_amt = safe_int(settings.get('per_match', 0))
-    
-    # ID STAMPING FOR PRIZES
     match_desc = f"Match Win: {match.category} [ID:{tourney.id}] (Match #{match.id})"
-    
     if per_match_amt > 0:
         amount = per_match_amt // len(winner_ids)
         for tid in winner_ids:
@@ -819,8 +1069,7 @@ def update_settings(data: SettingsUpdate, db: Session = Depends(get_db)):
 @app.get("/admin/get-settings/{key}")
 def get_settings(key: str, db: Session = Depends(get_db)):
     setting = db.query(models.SystemSettings).filter(models.SystemSettings.key == key).first()
-    if not setting:
-        return {"value": []}
+    if not setting: return {"value": []}
     return {"value": json.loads(setting.value)}
 
 @app.get("/admin/trigger-test-notification")
@@ -942,264 +1191,43 @@ def reset_password(data: PasswordResetRequest, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "message": "Password updated"}
 
-# --- FIND MATCH ENDPOINTS ---
 
-@app.post("/match/create")
-def create_pickup_match(data: PickupMatchCreate, db: Session = Depends(get_db)):
-    host = db.query(models.User).filter(models.User.team_id == data.host_team_id).first()
-    if not host: raise HTTPException(status_code=404, detail="Host not found")
-    
-    PLATFORM_FEE = 100
-    if host.wallet_balance < PLATFORM_FEE:
-        raise HTTPException(status_code=400, detail="Insufficient wallet balance for Platform Fee (₹100)")
-    
-    # Deduct Platform Fee
-    host.wallet_balance -= PLATFORM_FEE
-    db.add(models.Transaction(user_id=host.id, amount=PLATFORM_FEE, type="DEBIT", mode="PLATFORM_FEE", description="Hosting Fee"))
-    
-    cost_per = 0
-    if data.total_slots > 0:
-        cost_per = data.total_cost // data.total_slots
 
-    new_match = models.PickupMatch(
-        host_id=host.id,
-        type=data.type,
-        sport=data.sport,
-        date=data.date,
-        time=data.time,
-        venue=data.venue,
-        description=data.description,
-        total_slots=data.total_slots,
-        total_cost=data.total_cost,
-        cost_per_person=cost_per,
-        is_flexible=data.is_flexible,
-        join_mode=data.join_mode
-    )
-    db.add(new_match)
-    db.commit()
-    db.refresh(new_match)
-    
-    # Add Host as a player (Confirmed)
-    db.add(models.PickupPlayer(match_id=new_match.id, user_id=host.id, status="CONFIRMED", payment_status="HOST"))
-    db.commit()
-    
-    return {"status": "created", "match_id": new_match.id}
 
-@app.get("/match/list")
-def get_pickup_matches(type: str = "PUBLIC", user_id: int = 0, db: Session = Depends(get_db)):
-    # If user_id provided, return matches for that user (UPCOMING/INVITES)
-    if user_id > 0:
-        participations = db.query(models.PickupPlayer).filter(models.PickupPlayer.user_id == user_id).all()
-        matches = []
-        for p in participations:
-            m = db.query(models.PickupMatch).filter(models.PickupMatch.id == p.match_id).first()
-            if m:
-                host = db.query(models.User).filter(models.User.id == m.host_id).first()
-                matches.append({
-                    "id": m.id, "date": m.date, "time": m.time, "venue": m.venue,
-                    "sport": m.sport, "status": m.status, "player_status": p.status,
-                    "host_name": host.name if host else "Unknown",
-                    "type": m.type,
-                    "filled": m.filled_slots,  # Ensure this is sent
-                    "total": m.total_slots     # Ensure this is sent
-                })
-        return matches
 
-    # Otherwise return Public/Private matches
-    matches = db.query(models.PickupMatch).filter(
-        models.PickupMatch.type == type, 
-        models.PickupMatch.status != "CANCELLED"
-    ).all()
-    
-    result = []
-    for m in matches:
-        host = db.query(models.User).filter(models.User.id == m.host_id).first()
-        # Calculate filled slots dynamically to be safe
-        filled_count = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
-        
-        result.append({
-            "id": m.id,
-            "host_name": host.name if host else "Unknown",
-            "host_team_id": host.team_id if host else "",
-            "sport": m.sport,
-            "date": m.date,
-            "time": m.time,
-            "venue": m.venue,
-            "cost_per_person": m.cost_per_person,
-            "filled": filled_count,
-            "total": m.total_slots,
-            "is_flexible": m.is_flexible,
-            "description": m.description,
-            "join_mode": m.join_mode,
-            "status": m.status
-        })
-    return result
-    
-@app.get("/match/my-hosted/{team_id}")
-def get_hosted_matches(team_id: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.team_id == team_id).first()
-    if not user: return []
-    matches = db.query(models.PickupMatch).filter(models.PickupMatch.host_id == user.id).order_by(models.PickupMatch.id.desc()).all()
-    
-    res = []
-    for m in matches:
-        filled = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
-        requests = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "REQUESTED").count()
-        res.append({
-            "id": m.id, "date": m.date, "venue": m.venue, "sport": m.sport,
-            "filled": filled, "total": m.total_slots, "requests": requests, "status": m.status, "type": m.type
-        })
-    return res
 
-@app.post("/match/join")
-def join_pickup_match(data: JoinPickupRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.team_id == data.user_team_id).first()
-    match = db.query(models.PickupMatch).filter(models.PickupMatch.id == data.match_id).first()
-    
-    if not user or not match: raise HTTPException(status_code=404, detail="Not found")
-    
-    # Check if already joined or invited
-    existing = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == match.id, models.PickupPlayer.user_id == user.id).first()
-    
-    new_status = "CONFIRMED"
-    new_payment = "PENDING"
 
-    # LOGIC: If accepting an invite OR joining a public match -> Check Payment
-    if match.type == "PUBLIC" or (existing and existing.status == "INVITED"):
-        # For this logic, we assume "Pay" means deducting from wallet
-        if match.cost_per_person > 0:
-            if user.wallet_balance < match.cost_per_person:
-                raise HTTPException(status_code=400, detail="Insufficient Wallet Balance")
-            
-            user.wallet_balance -= match.cost_per_person
-            db.add(models.Transaction(user_id=user.id, amount=match.cost_per_person, type="DEBIT", mode="MATCH_JOIN", description=f"Join Match #{match.id}"))
-            new_payment = "PAID_PLATFORM"
-    
-    if match.join_mode == "REQUEST" and not (existing and existing.status == "INVITED"):
-        new_status = "REQUESTED"
 
-    if existing:
-        # Update existing invite
-        existing.status = new_status
-        existing.payment_status = new_payment
-    else:
-        # Create new entry
-        db.add(models.PickupPlayer(match_id=match.id, user_id=user.id, status=new_status, payment_status=new_payment))
-    
-    # Update filled slots count if confirmed
-    if new_status == "CONFIRMED":
-        match.filled_slots += 1
-        
-    db.commit()
-    
-    # Notify Host
-    host = db.query(models.User).filter(models.User.id == match.host_id).first()
-    if host and host.push_token:
-        send_push_alert(host.push_token, "New Player! 🎾", f"{user.name} has joined your match!")
 
-    return {"status": "joined", "player_status": new_status}
 
-@app.post("/match/invite")
-def invite_player(data: InvitePlayerRequest, db: Session = Depends(get_db)):
-    match = db.query(models.PickupMatch).filter(models.PickupMatch.id == data.match_id).first()
-    target = db.query(models.User).filter(models.User.team_id == data.target_team_id).first()
-    
-    if not match or not target: raise HTTPException(status_code=404, detail="Not found")
-    
-    # Create Invite
-    existing = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == match.id, models.PickupPlayer.user_id == target.id).first()
-    if not existing:
-        db.add(models.PickupPlayer(match_id=match.id, user_id=target.id, status="INVITED", payment_status="PENDING"))
-        db.commit()
-        if target.push_token:
-            send_push_alert(target.push_token, "Match Invite! 📩", "You have been invited to a private match.")
-            
-    return {"status": "invited"}
 
-@app.post("/match/edit")
-def edit_pickup_match(data: PickupMatchUpdate, db: Session = Depends(get_db)):
-    m = db.query(models.PickupMatch).filter(models.PickupMatch.id == data.match_id).first()
-    if m:
-        m.date = data.date
-        m.time = data.time
-        m.venue = data.venue
-        m.description = data.description
-        db.commit()
-    return {"status": "updated"}
 
-@app.get("/match/details/{match_id}")
-def get_match_details(match_id: int, db: Session = Depends(get_db)):
-    m = db.query(models.PickupMatch).filter(models.PickupMatch.id == match_id).first()
-    if not m: raise HTTPException(status_code=404, detail="Match not found")
-    
-    players = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id).all()
-    player_list = []
-    for p in players:
-        u = db.query(models.User).filter(models.User.id == p.user_id).first()
-        player_list.append({"id": p.id, "name": u.name, "team_id": u.team_id, "status": p.status, "payment": p.payment_status})
-        
-    return {
-        "match": {
-            "id": m.id, 
-            "type": m.type, 
-            "sport": m.sport,   # <--- THIS WAS MISSING, CAUSING THE CRASH
-            "date": m.date, 
-            "time": m.time, 
-            "venue": m.venue,
-            "cost_per": m.cost_per_person, 
-            "total_cost": m.total_cost, # Added for clarity
-            "description": m.description, 
-            "status": m.status, 
-            "slots": m.total_slots
-        },
-        "players": player_list
-    }
 
-@app.get("/user/list")
-def get_user_list(db: Session = Depends(get_db)):
-    users = db.query(models.User).all()
-    # Return simple list for the directory
-    return [{"name": u.name, "team_id": u.team_id, "id": u.id} for u in users]
 
-@app.post("/match/respond-request")
-def respond_pickup_request(data: RespondPickupRequest, db: Session = Depends(get_db)):
-    player_rec = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == data.match_id, models.PickupPlayer.id == data.player_id).first()
-    if not player_rec: raise HTTPException(status_code=404, detail="Request not found")
-    
-    if data.action == "ACCEPT":
-        player_rec.status = "CONFIRMED"
-        # If public and accepted, money is already with platform.
-    else:
-        player_rec.status = "REJECTED"
-        # If rejected and money was taken (Public), refund logic should be here
-        if player_rec.payment_status == "PAID_PLATFORM":
-             m = db.query(models.PickupMatch).filter(models.PickupMatch.id == data.match_id).first()
-             u = db.query(models.User).filter(models.User.id == player_rec.user_id).first()
-             u.wallet_balance += m.cost_per_person
-             db.add(models.Transaction(user_id=u.id, amount=m.cost_per_person, type="CREDIT", mode="REFUND", description=f"Refund Match #{m.id}"))
-             player_rec.payment_status = "REFUNDED"
-             
-    db.commit()
-    return {"status": "done"}
-    
-@app.get("/admin/pickup-matches")
-def get_all_pickup_matches(db: Session = Depends(get_db)):
-    matches = db.query(models.PickupMatch).order_by(models.PickupMatch.id.desc()).all()
-    res = []
-    for m in matches:
-        host = db.query(models.User).filter(models.User.id == m.host_id).first()
-        filled = db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == m.id, models.PickupPlayer.status == "CONFIRMED").count()
-        res.append({
-            "id": m.id, "type": m.type, "host_name": host.name if host else "Unknown",
-            "sport": m.sport, "venue": m.venue, "date": m.date, "filled": filled, "total": m.total_slots,
-            "status": m.status
-        })
-    return res
 
-@app.post("/admin/delete-pickup")
-def delete_pickup_match(data: MatchDelete, db: Session = Depends(get_db)):
-    # Simple delete for admin (Refunds should be handled manually in real prod, but here we just wipe)
-    db.query(models.PickupPlayer).filter(models.PickupPlayer.match_id == data.id).delete()
-    db.query(models.PickupMatch).filter(models.PickupMatch.id == data.id).delete()
-    db.commit()
-    return {"status": "deleted"}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   

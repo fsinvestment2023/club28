@@ -11,53 +11,36 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-
-// --- IMPORT API_URL FROM CONFIG ---
 import { API_URL } from '../config';
 import RazorpayCheckout from '../components/RazorpayCheckout';
 
-// --- NOTIFICATION HANDLER CONFIG ---
+// --- GLOBAL IGNORE LIST (Persists during session) ---
+const IGNORED_INVITES = new Set<number>();
+
+// --- NOTIFICATION HANDLER ---
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }),
 });
 
-// --- HELPER: REGISTER FOR PUSH NOTIFICATIONS ---
 async function registerForPushNotificationsAsync() {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
+      name: 'default', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#FF231F7C',
     });
   }
-
   if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
+      if (status !== 'granted') return null;
     }
-    if (finalStatus !== 'granted') {
-      return null;
-    }
-
     try {
         const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
         if (!projectId) return null; 
-        const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-        return token;
-    } catch (e) {
-        return null;
-    }
-  } else {
-    return null; 
+        return (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    } catch (e) { return null; }
   }
+  return null; 
 }
 
 const ActionCircle = ({ icon, label, onPress }: any) => (
@@ -116,53 +99,31 @@ export default function App() {
   const [scoreInput, setScoreInput] = useState("");
   const [submittingScore, setSubmittingScore] = useState(false);
 
-  // Notification Listener Refs
   const notificationListener = useRef<any>();
-  const responseListener = useRef<any>();
 
   useEffect(() => { checkLoginStatus(); }, []);
 
-  // --- AUTOMATIC TOKEN REGISTRATION ---
   useEffect(() => {
     if (isLoggedIn && teamId) {
         registerForPushNotificationsAsync().then(token => {
-            if (token) {
-                axios.post(`${API_URL}/user/update-push-token`, {
-                    team_id: teamId,
-                    token: token
-                }).catch(err => console.log("Token update failed", err));
-            }
+            if (token) axios.post(`${API_URL}/user/update-push-token`, { team_id: teamId, token: token }).catch(err => console.log(err));
         });
-
-        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-            fetchDashboardData(teamId);
-        });
-
-        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-            console.log("User tapped notification", response);
-        });
-
-        return () => {
-            notificationListener.current && notificationListener.current.remove();
-            responseListener.current && responseListener.current.remove();
-        };
+        notificationListener.current = Notifications.addNotificationReceivedListener(notification => { fetchDashboardData(teamId); });
+        return () => { notificationListener.current && notificationListener.current.remove(); };
     }
   }, [isLoggedIn, teamId]);
 
   useEffect(() => {
     if(isLoggedIn && teamId) {
         fetchDashboardData(teamId);
-        checkForInvites(teamId); // Check for invites on load
+        checkForInvites(teamId);
     }
   }, [selectedRegIndex, isLoggedIn, teamId]);
 
   const checkLoginStatus = async () => {
     try {
       const savedTeamId = await AsyncStorage.getItem("team_id");
-      if (savedTeamId) {
-        setTeamId(savedTeamId);
-        setIsLoggedIn(true);
-      }
+      if (savedTeamId) { setTeamId(savedTeamId); setIsLoggedIn(true); }
     } catch (error) { console.log(error); } 
     finally { setCheckingAuth(false); }
   };
@@ -181,33 +142,23 @@ export default function App() {
         if (selectedRegIndex >= userRes.data.registrations.length) setSelectedRegIndex(0);
         active = userRes.data.registrations[safeIndex];
         
-        const stdRes = await axios.get(`${API_URL}/standings`, {
-          params: { tournament: active.tournament, city: active.city, level: active.level }
-        });
+        const stdRes = await axios.get(`${API_URL}/standings`, { params: { tournament: active.tournament, city: active.city, level: active.level } });
         setStandings(stdRes.data);
 
         const scoreRes = await axios.get(`${API_URL}/scores`);
         const allMatches = scoreRes.data;
-        const mine = allMatches.filter((m: any) => 
-          (m.t1.includes(tid) || m.t2.includes(tid)) && m.category === active.tournament && m.city === active.city
-        );
+        const mine = allMatches.filter((m: any) => (m.t1.includes(tid) || m.t2.includes(tid)) && m.category === active.tournament && m.city === active.city);
         mine.sort((a: any, b: any) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
         setMyMatches(mine);
       } else {
-          setStandings([]);
-          setMyMatches([]);
-          setTransactions([]); 
-          setNotifications([]);
+          setStandings([]); setMyMatches([]); setTransactions([]); setNotifications([]);
       }
 
       if (active) {
-          setNotifications([]); 
-          setTransactions([]);
-          const notifParams = { tournament: active.tournament, city: active.city };
-          const notifRes = await axios.get(`${API_URL}/user/${tid}/notifications`, { params: notifParams });
+          setNotifications([]); setTransactions([]);
+          const notifRes = await axios.get(`${API_URL}/user/${tid}/notifications`, { params: { tournament: active.tournament, city: active.city } });
           setNotifications(notifRes.data);
-          const txnParams = { tournament: active.tournament, city: active.city };
-          const txnRes = await axios.get(`${API_URL}/user/${tid}/transactions`, { params: txnParams });
+          const txnRes = await axios.get(`${API_URL}/user/${tid}/transactions`, { params: { tournament: active.tournament, city: active.city } });
           setTransactions(txnRes.data);
       }
     } catch (e) { console.log("Fetch Error", e); }
@@ -218,20 +169,29 @@ export default function App() {
           const userRes = await axios.get(`${API_URL}/user/${tid}`);
           const userId = userRes.data.id;
           
-          // Fetch matches where user status is INVITED
           const res = await axios.get(`${API_URL}/match/list?user_id=${userId}`);
-          const invites = res.data.filter((m: any) => m.player_status === "INVITED");
+          // Logic: INVITED status AND ID is not in IGNORED_INVITES set
+          const invites = res.data.filter((m: any) => m.player_status === "INVITED" && !IGNORED_INVITES.has(m.id));
           
           if (invites.length > 0) {
-              setPendingInvite(invites[0]); // Show the first invite
+              setPendingInvite(invites[0]); 
               setInviteModal(true);
           }
       } catch (e) { console.log("Invite Check Error", e); }
   };
 
-  const acceptInvite = () => {
-      setInviteModal(false);
+  const handleCloseInvite = () => {
       if(pendingInvite) {
+          IGNORED_INVITES.add(pendingInvite.id); // Add to global ignore list
+      }
+      setInviteModal(false);
+      setPendingInvite(null);
+  };
+
+  const handleViewAndJoin = () => {
+      if(pendingInvite) {
+          IGNORED_INVITES.add(pendingInvite.id); // Add to ignore list so it doesn't show again on back nav
+          setInviteModal(false);
           router.push(`/pickup/${pendingInvite.id}`);
       }
   };
@@ -248,10 +208,10 @@ export default function App() {
   const handleLogin = async () => { if (!teamId || !password) return Alert.alert("Error", "Enter Team ID & Password"); setLoading(true); try { const res = await axios.post(`${API_URL}/login`, { team_id: teamId.toUpperCase(), password }); if (res.data.status === "success") { await AsyncStorage.setItem("team_id", teamId.toUpperCase()); setIsLoggedIn(true); } } catch (error) { Alert.alert("Login Failed", "Invalid ID or Password"); } setLoading(false); };
   const handleRegister = async () => { if (!name || !password) return Alert.alert("Error", "Fill all fields"); setLoading(true); try { const res = await axios.post(`${API_URL}/register`, { phone, name, password }); Alert.alert("Success!", `Your Team ID is: ${res.data.user.team_id}`, [{ text: "OK", onPress: () => { setTeamId(res.data.user.team_id); setMode("LOGIN"); } }]); } catch (error) { Alert.alert("Error", "Registration failed."); } setLoading(false); };
   const sendOtp = async (nextMode: string) => { setMode(nextMode); };
-  const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); setIsLoggedIn(false); setTeamId(""); setPassword(""); setUserData(null); };
   const handleCheckPhone = async () => { if (!phone) return Alert.alert("Error", "Enter phone number"); setLoading(true); try { const res = await axios.post(`${API_URL}/check-phone`, { phone }); if (res.data.status === "exists") { setRecoveredTeamId(res.data.team_id); setMode("FORGOT_OTP"); } } catch (e) { Alert.alert("Error", "Phone number not found"); } setLoading(false); };
   const handleVerifyForgotOtp = () => { if (otp === "1234") { setMode("FORGOT_FINAL"); } else { Alert.alert("Error", "Invalid OTP"); } };
   const handleResetPassword = async () => { if (!password) return Alert.alert("Error", "Enter new password"); setLoading(true); try { await axios.post(`${API_URL}/reset-password`, { phone, new_password: password }); Alert.alert("Success", "Password Updated! Please Login."); setTeamId(recoveredTeamId); setMode("LOGIN"); } catch (e) { Alert.alert("Error", "Reset Failed"); } setLoading(false); };
+  const handleLogout = async () => { await AsyncStorage.removeItem("team_id"); setIsLoggedIn(false); setTeamId(""); setPassword(""); setUserData(null); };
 
   if (checkingAuth) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb"/></View>;
 
@@ -385,7 +345,7 @@ export default function App() {
 
       <RazorpayCheckout visible={payModal} onClose={() => setPayModal(false)} orderDetails={orderDetails} onSuccess={handlePaymentSuccess} />
 
-      {/* --- INVITE MODAL POPUP --- */}
+      {/* --- FIXED: INVITE MODAL WITH IGNORE LOGIC --- */}
       <Modal visible={inviteModal} transparent animationType="fade">
           <View style={styles.modalBg}>
               <View style={styles.modalCard}>
@@ -393,10 +353,10 @@ export default function App() {
                   <Text style={{textAlign:'center', color:'#666', marginBottom:20}}>
                       {pendingInvite?.host_name} has invited you to a match on {pendingInvite?.date} at {pendingInvite?.venue}.
                   </Text>
-                  <TouchableOpacity style={styles.mainBtn} onPress={acceptInvite}>
+                  <TouchableOpacity style={styles.mainBtn} onPress={handleViewAndJoin}>
                       <Text style={styles.btnText}>VIEW & JOIN</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={{marginTop:15}} onPress={() => setInviteModal(false)}>
+                  <TouchableOpacity style={{marginTop:15}} onPress={handleCloseInvite}>
                       <Text style={{color:'#999', fontWeight:'bold'}}>CLOSE</Text>
                   </TouchableOpacity>
               </View>
